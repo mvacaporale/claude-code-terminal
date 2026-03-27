@@ -1,8 +1,21 @@
-import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, ItemView, Menu, FileSystemAdapter, setIcon } from "obsidian";
-import { Terminal } from "@xterm/xterm";
+import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, ItemView, Menu, FileSystemAdapter, setIcon, Notice } from "obsidian";
+import { Terminal, IDecoration, IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { IPty } from "node-pty";
 import * as path from "path";
+import * as fs from "fs";
+
+interface TerminalHighlight {
+  id: string;
+  text: string;
+  timestamp: number;
+  startLine: number;
+  startCol: number;
+  endLine: number;
+  endCol: number;
+  decorations: IDecoration[];
+  markers: IMarker[];
+}
 
 // Use window.require for native modules in Electron
 // In Electron, window has a require property for Node.js modules
@@ -16,6 +29,8 @@ interface ClaudeTerminalSettings {
   fontSize: number;
   floatingWidth: number;
   floatingHeight: number;
+  highlightColor: string;
+  highlightSavePath: string;
 }
 
 const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
@@ -24,6 +39,8 @@ const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   fontSize: 13,
   floatingWidth: 500,
   floatingHeight: 350,
+  highlightColor: "#fef3c7",
+  highlightSavePath: "3. Resources/Highlights",
 };
 
 class ClaudeTerminalView extends ItemView {
@@ -33,6 +50,9 @@ class ClaudeTerminalView extends ItemView {
   private resizeObserver: ResizeObserver | null = null;
   private plugin: ClaudeTerminalPlugin;
   private fitDebounceTimer: NodeJS.Timeout | null = null;
+  private highlights: TerminalHighlight[] = [];
+  private highlightPopup: HTMLElement | null = null;
+  private activeHighlightId: string | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudeTerminalPlugin) {
     super(leaf);
@@ -80,6 +100,21 @@ class ClaudeTerminalView extends ItemView {
         .setIcon("eraser")
         .onClick(() => this.sendClear());
     });
+    menu.addItem((item) => {
+      item
+        .setTitle("Save highlights")
+        .setIcon("save")
+        .onClick(() => this.plugin.saveHighlightsPublic());
+    });
+    menu.addItem((item) => {
+      item
+        .setTitle("Clear all highlights")
+        .setIcon("trash")
+        .onClick(() => {
+          this.clearAllHighlights();
+          new Notice("Highlights cleared");
+        });
+    });
   }
 
   sendClear() {
@@ -117,6 +152,7 @@ class ClaudeTerminalView extends ItemView {
       cursorBlink: true,
       cursorStyle: "bar",
       allowTransparency: true,
+      allowProposedApi: true,
       scrollback: 10000,
       cols: 80,
       rows: 24,
@@ -126,6 +162,16 @@ class ClaudeTerminalView extends ItemView {
     this.terminal.loadAddon(this.fitAddon);
 
     this.terminal.open(container);
+
+    // Auto-highlight on mouseup after selection
+    this.terminal.element?.addEventListener("mouseup", () => {
+      setTimeout(() => {
+        const selection = this.terminal?.getSelection();
+        if (selection && selection.trim().length > 0) {
+          this.createHighlightFromSelection();
+        }
+      }, 100);
+    });
 
     // Fit after DOM is ready
     requestAnimationFrame(() => {
@@ -154,7 +200,13 @@ class ClaudeTerminalView extends ItemView {
   private getPluginPath(): string {
     const adapter = this.app.vault.adapter as FileSystemAdapter;
     const basePath = adapter.getBasePath();
-    return path.join(basePath, this.app.vault.configDir, "plugins", "claude-terminal");
+    const pluginPath = path.join(basePath, this.app.vault.configDir, "plugins", "claude-code-terminal");
+    // Resolve symlinks to get the actual path where node_modules lives
+    try {
+      return fs.realpathSync(pluginPath);
+    } catch {
+      return pluginPath;
+    }
   }
 
   private startPty() {
@@ -233,6 +285,155 @@ class ClaudeTerminalView extends ItemView {
   focusTerminal() {
     this.terminal?.focus();
   }
+
+  getHighlights(): TerminalHighlight[] {
+    return this.highlights;
+  }
+
+  private createHighlightFromSelection() {
+    if (!this.terminal) return;
+
+    const selection = this.terminal.getSelection();
+    if (!selection || selection.trim().length === 0) return;
+
+    const selectionPosition = this.terminal.getSelectionPosition();
+    if (!selectionPosition) return;
+
+    const highlight: TerminalHighlight = {
+      id: `hl-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      text: selection,
+      timestamp: Date.now(),
+      startLine: selectionPosition.start.y,
+      startCol: selectionPosition.start.x,
+      endLine: selectionPosition.end.y,
+      endCol: selectionPosition.end.x,
+      decorations: [],
+      markers: [],
+    };
+
+    this.renderHighlight(highlight);
+    this.highlights.push(highlight);
+    this.terminal.clearSelection();
+  }
+
+  private renderHighlight(highlight: TerminalHighlight) {
+    if (!this.terminal) return;
+
+    const buffer = this.terminal.buffer.active;
+    const highlightColor = this.plugin.settings.highlightColor;
+
+    for (let line = highlight.startLine; line <= highlight.endLine; line++) {
+      const lineOffset = line - (buffer.baseY + buffer.cursorY);
+      const marker = this.terminal.registerMarker(lineOffset);
+      if (!marker) continue;
+
+      highlight.markers.push(marker);
+
+      let startX = 0;
+      let width = this.terminal.cols;
+
+      if (line === highlight.startLine) {
+        startX = highlight.startCol;
+        width = line === highlight.endLine
+          ? highlight.endCol - highlight.startCol
+          : this.terminal.cols - highlight.startCol;
+      } else if (line === highlight.endLine) {
+        startX = 0;
+        width = highlight.endCol;
+      }
+
+      const decoration = this.terminal.registerDecoration({
+        marker,
+        x: startX,
+        width,
+        layer: "bottom",
+      });
+
+      if (decoration) {
+        highlight.decorations.push(decoration);
+
+        decoration.onRender((element) => {
+          element.style.backgroundColor = highlightColor;
+          element.style.opacity = "0.5";
+          element.style.pointerEvents = "auto";
+          element.dataset.highlightId = highlight.id;
+          element.addClass("claude-terminal-highlight");
+
+          element.addEventListener("mouseenter", () => this.showHighlightPopup(highlight, element));
+          element.addEventListener("mouseleave", (e) => {
+            const related = e.relatedTarget as HTMLElement;
+            if (!related?.closest(".claude-terminal-highlight-popup")) {
+              this.hideHighlightPopup();
+            }
+          });
+        });
+      }
+    }
+  }
+
+  private showHighlightPopup(highlight: TerminalHighlight, element: HTMLElement) {
+    this.hideHighlightPopup();
+    this.activeHighlightId = highlight.id;
+
+    const popup = document.createElement("div");
+    popup.addClass("claude-terminal-highlight-popup");
+
+    const deleteBtn = popup.createEl("button", { cls: "claude-terminal-highlight-btn" });
+    setIcon(deleteBtn, "x");
+    deleteBtn.title = "Remove highlight";
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.removeHighlight(highlight.id);
+    });
+
+    const copyBtn = popup.createEl("button", { cls: "claude-terminal-highlight-btn" });
+    setIcon(copyBtn, "copy");
+    copyBtn.title = "Copy to clipboard";
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(highlight.text);
+      new Notice("Copied to clipboard");
+    });
+
+    const rect = element.getBoundingClientRect();
+    popup.style.position = "fixed";
+    popup.style.top = `${rect.top - 4}px`;
+    popup.style.left = `${rect.right + 4}px`;
+    popup.style.zIndex = "10000";
+
+    popup.addEventListener("mouseleave", () => this.hideHighlightPopup());
+
+    document.body.appendChild(popup);
+    this.highlightPopup = popup;
+  }
+
+  private hideHighlightPopup() {
+    if (this.highlightPopup) {
+      this.highlightPopup.remove();
+      this.highlightPopup = null;
+    }
+    this.activeHighlightId = null;
+  }
+
+  private removeHighlight(id: string) {
+    const index = this.highlights.findIndex(h => h.id === id);
+    if (index === -1) return;
+
+    const highlight = this.highlights[index];
+    highlight.decorations.forEach(d => d.dispose());
+    highlight.markers.forEach(m => m.dispose());
+    this.highlights.splice(index, 1);
+    this.hideHighlightPopup();
+  }
+
+  clearAllHighlights() {
+    this.highlights.forEach(h => {
+      h.decorations.forEach(d => d.dispose());
+      h.markers.forEach(m => m.dispose());
+    });
+    this.highlights = [];
+    this.hideHighlightPopup();
+  }
 }
 
 export default class ClaudeTerminalPlugin extends Plugin {
@@ -244,6 +445,9 @@ export default class ClaudeTerminalPlugin extends Plugin {
   private floatingResizeObserver: ResizeObserver | null = null;
   private isFloatingVisible: boolean = false;
   private floatingFitDebounceTimer: NodeJS.Timeout | null = null;
+  private floatingHighlights: TerminalHighlight[] = [];
+  private floatingHighlightPopup: HTMLElement | null = null;
+  private floatingActiveHighlightId: string | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -271,6 +475,25 @@ export default class ClaudeTerminalPlugin extends Plugin {
       name: "Open claude terminal in right sidebar",
       callback: () => {
         void this.openInSidebar();
+      },
+    });
+
+    // Save highlights command
+    this.addCommand({
+      id: "save-terminal-highlights",
+      name: "Save terminal highlights to file",
+      callback: () => {
+        void this.saveHighlights();
+      },
+    });
+
+    // Clear all highlights command
+    this.addCommand({
+      id: "clear-terminal-highlights",
+      name: "Clear all terminal highlights",
+      callback: () => {
+        this.clearAllHighlights();
+        new Notice("All highlights cleared");
       },
     });
 
@@ -323,6 +546,10 @@ export default class ClaudeTerminalPlugin extends Plugin {
     this.showFloatingTerminal();
   }
 
+  saveHighlightsPublic() {
+    void this.saveHighlights();
+  }
+
   // ========== Floating Terminal ==========
 
   private createFloatingContainer() {
@@ -338,6 +565,12 @@ export default class ClaudeTerminalPlugin extends Plugin {
     headerLeft.createSpan({ cls: "claude-terminal-title", text: "Claude terminal" });
 
     const headerRight = header.createDiv({ cls: "claude-terminal-header-right" });
+
+    // Save highlights button
+    const saveBtn = headerRight.createEl("button", { cls: "claude-terminal-btn clickable-icon", attr: { "aria-label": "Save highlights" } });
+    setIcon(saveBtn, "save");
+    saveBtn.title = "Save highlights";
+    saveBtn.addEventListener("click", () => { void this.saveHighlights(); });
 
     // Clear button
     const clearBtn = headerRight.createEl("button", { cls: "claude-terminal-btn clickable-icon", attr: { "aria-label": "Clear terminal" } });
@@ -476,6 +709,7 @@ export default class ClaudeTerminalPlugin extends Plugin {
       cursorBlink: true,
       cursorStyle: "bar",
       allowTransparency: true,
+      allowProposedApi: true,
       scrollback: 10000,
       cols: 80,
       rows: 24,
@@ -484,6 +718,16 @@ export default class ClaudeTerminalPlugin extends Plugin {
     this.floatingFitAddon = new FitAddon();
     this.floatingTerminal.loadAddon(this.floatingFitAddon);
     this.floatingTerminal.open(content as HTMLElement);
+
+    // Auto-highlight on mouseup after selection
+    this.floatingTerminal.element?.addEventListener("mouseup", () => {
+      setTimeout(() => {
+        const selection = this.floatingTerminal?.getSelection();
+        if (selection && selection.trim().length > 0) {
+          this.createFloatingHighlightFromSelection();
+        }
+      }, 100);
+    });
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -510,7 +754,13 @@ export default class ClaudeTerminalPlugin extends Plugin {
   private getPluginPath(): string {
     const adapter = this.app.vault.adapter as FileSystemAdapter;
     const basePath = adapter.getBasePath();
-    return path.join(basePath, this.app.vault.configDir, "plugins", "claude-terminal");
+    const pluginPath = path.join(basePath, this.app.vault.configDir, "plugins", "claude-code-terminal");
+    // Resolve symlinks to get the actual path where node_modules lives
+    try {
+      return fs.realpathSync(pluginPath);
+    } catch {
+      return pluginPath;
+    }
   }
 
   private startFloatingPty() {
@@ -614,6 +864,234 @@ export default class ClaudeTerminalPlugin extends Plugin {
     this.floatingContainer.addClass("is-hidden");
     this.isFloatingVisible = false;
   }
+
+  private createFloatingHighlightFromSelection() {
+    if (!this.floatingTerminal) return;
+
+    const selection = this.floatingTerminal.getSelection();
+    if (!selection || selection.trim().length === 0) return;
+
+    const selectionPosition = this.floatingTerminal.getSelectionPosition();
+    if (!selectionPosition) return;
+
+    const highlight: TerminalHighlight = {
+      id: `hl-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      text: selection,
+      timestamp: Date.now(),
+      startLine: selectionPosition.start.y,
+      startCol: selectionPosition.start.x,
+      endLine: selectionPosition.end.y,
+      endCol: selectionPosition.end.x,
+      decorations: [],
+      markers: [],
+    };
+
+    this.renderFloatingHighlight(highlight);
+    this.floatingHighlights.push(highlight);
+    this.floatingTerminal.clearSelection();
+  }
+
+  private renderFloatingHighlight(highlight: TerminalHighlight) {
+    if (!this.floatingTerminal) return;
+
+    const buffer = this.floatingTerminal.buffer.active;
+    const highlightColor = this.settings.highlightColor;
+
+    for (let line = highlight.startLine; line <= highlight.endLine; line++) {
+      const lineOffset = line - buffer.cursorY;
+      const marker = this.floatingTerminal.registerMarker(lineOffset);
+      if (!marker) continue;
+
+      highlight.markers.push(marker);
+
+      let startX = 0;
+      let width = this.floatingTerminal.cols;
+
+      if (line === highlight.startLine) {
+        startX = highlight.startCol;
+        width = line === highlight.endLine
+          ? highlight.endCol - highlight.startCol
+          : this.floatingTerminal.cols - highlight.startCol;
+      } else if (line === highlight.endLine) {
+        startX = 0;
+        width = highlight.endCol;
+      }
+
+      const decoration = this.floatingTerminal.registerDecoration({
+        marker,
+        x: startX,
+        width,
+        backgroundColor: highlightColor,
+        layer: "bottom",
+      });
+
+      if (decoration) {
+        highlight.decorations.push(decoration);
+
+        decoration.onRender((element) => {
+          element.style.backgroundColor = highlightColor;
+          element.style.opacity = "0.5";
+          element.style.pointerEvents = "auto";
+          element.dataset.highlightId = highlight.id;
+          element.addClass("claude-terminal-highlight");
+
+          element.addEventListener("mouseenter", () => this.showFloatingHighlightPopup(highlight, element));
+          element.addEventListener("mouseleave", (e) => {
+            const related = e.relatedTarget as HTMLElement;
+            if (!related?.closest(".claude-terminal-highlight-popup")) {
+              this.hideFloatingHighlightPopup();
+            }
+          });
+        });
+      }
+    }
+  }
+
+  private showFloatingHighlightPopup(highlight: TerminalHighlight, element: HTMLElement) {
+    this.hideFloatingHighlightPopup();
+    this.floatingActiveHighlightId = highlight.id;
+
+    const popup = document.createElement("div");
+    popup.addClass("claude-terminal-highlight-popup");
+
+    const deleteBtn = popup.createEl("button", { cls: "claude-terminal-highlight-btn" });
+    setIcon(deleteBtn, "x");
+    deleteBtn.title = "Remove highlight";
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.removeFloatingHighlight(highlight.id);
+    });
+
+    const copyBtn = popup.createEl("button", { cls: "claude-terminal-highlight-btn" });
+    setIcon(copyBtn, "copy");
+    copyBtn.title = "Copy to clipboard";
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(highlight.text);
+      new Notice("Copied to clipboard");
+    });
+
+    const rect = element.getBoundingClientRect();
+    popup.style.position = "fixed";
+    popup.style.top = `${rect.top - 4}px`;
+    popup.style.left = `${rect.right + 4}px`;
+    popup.style.zIndex = "10000";
+
+    popup.addEventListener("mouseleave", () => this.hideFloatingHighlightPopup());
+
+    document.body.appendChild(popup);
+    this.floatingHighlightPopup = popup;
+  }
+
+  private hideFloatingHighlightPopup() {
+    if (this.floatingHighlightPopup) {
+      this.floatingHighlightPopup.remove();
+      this.floatingHighlightPopup = null;
+    }
+    this.floatingActiveHighlightId = null;
+  }
+
+  private removeFloatingHighlight(id: string) {
+    const index = this.floatingHighlights.findIndex(h => h.id === id);
+    if (index === -1) return;
+
+    const highlight = this.floatingHighlights[index];
+    highlight.decorations.forEach(d => d.dispose());
+    highlight.markers.forEach(m => m.dispose());
+    this.floatingHighlights.splice(index, 1);
+    this.hideFloatingHighlightPopup();
+  }
+
+  private clearAllHighlights() {
+    // Clear floating highlights
+    this.floatingHighlights.forEach(h => {
+      h.decorations.forEach(d => d.dispose());
+      h.markers.forEach(m => m.dispose());
+    });
+    this.floatingHighlights = [];
+    this.hideFloatingHighlightPopup();
+
+    // Clear sidebar view highlights
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_TERMINAL);
+    leaves.forEach(leaf => {
+      const view = leaf.view as ClaudeTerminalView;
+      view.clearAllHighlights();
+    });
+  }
+
+  private async saveHighlights() {
+    const allHighlights: TerminalHighlight[] = [
+      ...this.floatingHighlights,
+    ];
+
+    // Get highlights from sidebar view
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_TERMINAL);
+    leaves.forEach(leaf => {
+      const view = leaf.view as ClaudeTerminalView;
+      allHighlights.push(...view.getHighlights());
+    });
+
+    if (allHighlights.length === 0) {
+      new Notice("No highlights to save");
+      return;
+    }
+
+    // Sort by timestamp
+    allHighlights.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Generate markdown content
+    const now = new Date();
+    const dateStr = now.toISOString().split("T")[0];
+    const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+
+    let content = `---
+type: highlights
+tags: claude-code, terminal
+last_edited: ${dateStr}
+summary: Highlights from Claude Code terminal session
+---
+
+# Claude Terminal Highlights - ${dateStr} ${timeStr}
+
+`;
+
+    allHighlights.forEach(h => {
+      const escapedText = h.text.replace(/\n/g, " ").trim();
+      content += `- ${escapedText}\n`;
+    });
+
+    // Save to file
+    const folderPath = this.settings.highlightSavePath;
+    const fileName = `Claude Terminal - ${dateStr}.md`;
+    const filePath = `${folderPath}/${fileName}`;
+
+    try {
+      // Ensure folder exists
+      const adapter = this.app.vault.adapter as FileSystemAdapter;
+      const fullFolderPath = path.join(adapter.getBasePath(), folderPath);
+      if (!fs.existsSync(fullFolderPath)) {
+        fs.mkdirSync(fullFolderPath, { recursive: true });
+      }
+
+      // Check if file exists and append or create
+      const fullFilePath = path.join(adapter.getBasePath(), filePath);
+      if (fs.existsSync(fullFilePath)) {
+        // Append to existing file
+        const existingContent = fs.readFileSync(fullFilePath, "utf-8");
+        const newHighlightsSection = content.split("# Claude Terminal Highlights")[1];
+        if (newHighlightsSection) {
+          fs.appendFileSync(fullFilePath, `\n---\n\n# Session ${timeStr}\n${newHighlightsSection}`);
+        }
+      } else {
+        fs.writeFileSync(fullFilePath, content);
+      }
+
+      new Notice(`Saved ${allHighlights.length} highlights to ${fileName}`);
+    } catch (error) {
+      console.error("Failed to save highlights:", error);
+      new Notice("Failed to save highlights");
+    }
+  }
 }
 
 class ClaudeTerminalSettingTab extends PluginSettingTab {
@@ -661,6 +1139,34 @@ class ClaudeTerminalSettingTab extends PluginSettingTab {
           .setDynamicTooltip()
           .onChange(async (value) => {
             this.plugin.settings.fontSize = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    containerEl.createEl("h3", { text: "Highlights" });
+
+    new Setting(containerEl)
+      .setName("Highlight color")
+      .setDesc("Background color for text highlights (hex)")
+      .addText((text) =>
+        text
+          .setPlaceholder("#fef3c7")
+          .setValue(this.plugin.settings.highlightColor)
+          .onChange(async (value) => {
+            this.plugin.settings.highlightColor = value || "#fef3c7";
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Highlight save path")
+      .setDesc("Folder path in vault where highlights are saved")
+      .addText((text) =>
+        text
+          .setPlaceholder("3. Resources/Highlights")
+          .setValue(this.plugin.settings.highlightSavePath)
+          .onChange(async (value) => {
+            this.plugin.settings.highlightSavePath = value || "3. Resources/Highlights";
             await this.plugin.saveSettings();
           })
       );

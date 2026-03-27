@@ -313,3 +313,45 @@
 .claude-terminal-view-container .xterm-viewport {
   background-color: var(--background-primary) !important;
 }
+
+/* Highlight styles */
+.claude-terminal-highlight {
+  cursor: pointer;
+  border-radius: 2px;
+  pointer-events: auto;
+}
+
+.claude-terminal-highlight-popup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
+}
+
+.claude-terminal-highlight-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-s, 4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.claude-terminal-highlight-btn:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claude-terminal-highlight-btn:first-child:hover {
+  background-color: var(--background-modifier-error, #e81123);
+  color: var(--text-on-accent, white);
+}
