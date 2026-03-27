@@ -53,6 +53,7 @@ class ClaudeTerminalView extends ItemView {
   private highlights: TerminalHighlight[] = [];
   private highlightPopup: HTMLElement | null = null;
   private activeHighlightId: string | null = null;
+  private hidePopupTimeout: NodeJS.Timeout | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudeTerminalPlugin) {
     super(leaf);
@@ -359,12 +360,12 @@ class ClaudeTerminalView extends ItemView {
           element.dataset.highlightId = highlight.id;
           element.addClass("claude-terminal-highlight");
 
-          element.addEventListener("mouseenter", () => this.showHighlightPopup(highlight, element));
-          element.addEventListener("mouseleave", (e) => {
-            const related = e.relatedTarget as HTMLElement;
-            if (!related?.closest(".claude-terminal-highlight-popup")) {
-              this.hideHighlightPopup();
-            }
+          element.addEventListener("mouseenter", () => {
+            this.cancelHidePopup();
+            this.showHighlightPopup(highlight, element);
+          });
+          element.addEventListener("mouseleave", () => {
+            this.scheduleHidePopup();
           });
         });
       }
@@ -401,13 +402,29 @@ class ClaudeTerminalView extends ItemView {
     popup.style.left = `${rect.right + 4}px`;
     popup.style.zIndex = "10000";
 
-    popup.addEventListener("mouseleave", () => this.hideHighlightPopup());
+    popup.addEventListener("mouseenter", () => this.cancelHidePopup());
+    popup.addEventListener("mouseleave", () => this.scheduleHidePopup());
 
     document.body.appendChild(popup);
     this.highlightPopup = popup;
   }
 
+  private scheduleHidePopup() {
+    this.cancelHidePopup();
+    this.hidePopupTimeout = setTimeout(() => {
+      this.hideHighlightPopup();
+    }, 300);
+  }
+
+  private cancelHidePopup() {
+    if (this.hidePopupTimeout) {
+      clearTimeout(this.hidePopupTimeout);
+      this.hidePopupTimeout = null;
+    }
+  }
+
   private hideHighlightPopup() {
+    this.cancelHidePopup();
     if (this.highlightPopup) {
       this.highlightPopup.remove();
       this.highlightPopup = null;
@@ -448,6 +465,7 @@ export default class ClaudeTerminalPlugin extends Plugin {
   private floatingHighlights: TerminalHighlight[] = [];
   private floatingHighlightPopup: HTMLElement | null = null;
   private floatingActiveHighlightId: string | null = null;
+  private floatingHidePopupTimeout: NodeJS.Timeout | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -935,12 +953,12 @@ export default class ClaudeTerminalPlugin extends Plugin {
           element.dataset.highlightId = highlight.id;
           element.addClass("claude-terminal-highlight");
 
-          element.addEventListener("mouseenter", () => this.showFloatingHighlightPopup(highlight, element));
-          element.addEventListener("mouseleave", (e) => {
-            const related = e.relatedTarget as HTMLElement;
-            if (!related?.closest(".claude-terminal-highlight-popup")) {
-              this.hideFloatingHighlightPopup();
-            }
+          element.addEventListener("mouseenter", () => {
+            this.cancelFloatingHidePopup();
+            this.showFloatingHighlightPopup(highlight, element);
+          });
+          element.addEventListener("mouseleave", () => {
+            this.scheduleFloatingHidePopup();
           });
         });
       }
@@ -977,13 +995,29 @@ export default class ClaudeTerminalPlugin extends Plugin {
     popup.style.left = `${rect.right + 4}px`;
     popup.style.zIndex = "10000";
 
-    popup.addEventListener("mouseleave", () => this.hideFloatingHighlightPopup());
+    popup.addEventListener("mouseenter", () => this.cancelFloatingHidePopup());
+    popup.addEventListener("mouseleave", () => this.scheduleFloatingHidePopup());
 
     document.body.appendChild(popup);
     this.floatingHighlightPopup = popup;
   }
 
+  private scheduleFloatingHidePopup() {
+    this.cancelFloatingHidePopup();
+    this.floatingHidePopupTimeout = setTimeout(() => {
+      this.hideFloatingHighlightPopup();
+    }, 300);
+  }
+
+  private cancelFloatingHidePopup() {
+    if (this.floatingHidePopupTimeout) {
+      clearTimeout(this.floatingHidePopupTimeout);
+      this.floatingHidePopupTimeout = null;
+    }
+  }
+
   private hideFloatingHighlightPopup() {
+    this.cancelFloatingHidePopup();
     if (this.floatingHighlightPopup) {
       this.floatingHighlightPopup.remove();
       this.floatingHighlightPopup = null;
