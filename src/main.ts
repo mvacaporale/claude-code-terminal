@@ -164,6 +164,20 @@ class ClaudeTerminalView extends ItemView {
 
     this.terminal.open(container);
 
+    // Handle Shift+Enter for newline in Claude Code
+    this.terminal.attachCustomKeyEventHandler((event) => {
+      if (event.shiftKey && event.key === "Enter") {
+        if (event.type === "keydown") {
+          // Send escape sequence for Shift+Enter (kitty keyboard protocol)
+          this.ptyProcess?.write("\x1b[13;2u");
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        return false;
+      }
+      return true;
+    });
+
     // Auto-highlight on mouseup after selection
     this.terminal.element?.addEventListener("mouseup", () => {
       setTimeout(() => {
@@ -252,8 +266,12 @@ class ClaudeTerminalView extends ItemView {
 
       if (this.plugin.settings.autoLaunchClaude) {
         setTimeout(() => {
-          this.ptyProcess?.write("clear && claude\r");
+          this.ptyProcess?.write("clear && claude --continue\r");
         }, 300);
+        // Scroll to bottom after session loads
+        setTimeout(() => {
+          this.terminal?.scrollToBottom();
+        }, 1500);
       }
     } catch (error) {
       console.error("Claude Terminal: Failed to start PTY", error);
@@ -354,8 +372,9 @@ class ClaudeTerminalView extends ItemView {
         highlight.decorations.push(decoration);
 
         decoration.onRender((element) => {
-          element.style.backgroundColor = highlightColor;
-          element.style.opacity = "0.5";
+          const isDark = document.body.classList.contains("theme-dark");
+          element.style.backgroundColor = isDark ? "#854d0e" : highlightColor;
+          element.style.opacity = isDark ? "0.4" : "0.5";
           element.style.pointerEvents = "auto";
           element.dataset.highlightId = highlight.id;
           element.addClass("claude-terminal-highlight");
@@ -737,6 +756,20 @@ export default class ClaudeTerminalPlugin extends Plugin {
     this.floatingTerminal.loadAddon(this.floatingFitAddon);
     this.floatingTerminal.open(content as HTMLElement);
 
+    // Handle Shift+Enter for newline in Claude Code
+    this.floatingTerminal.attachCustomKeyEventHandler((event) => {
+      if (event.shiftKey && event.key === "Enter") {
+        if (event.type === "keydown") {
+          // Send escape sequence for Shift+Enter (kitty keyboard protocol)
+          this.floatingPtyProcess?.write("\x1b[13;2u");
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        return false;
+      }
+      return true;
+    });
+
     // Auto-highlight on mouseup after selection
     this.floatingTerminal.element?.addEventListener("mouseup", () => {
       setTimeout(() => {
@@ -823,8 +856,12 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
       if (this.settings.autoLaunchClaude) {
         setTimeout(() => {
-          this.floatingPtyProcess?.write("clear && claude\r");
+          this.floatingPtyProcess?.write("clear && claude --continue\r");
         }, 300);
+        // Scroll to bottom after session loads
+        setTimeout(() => {
+          this.floatingTerminal?.scrollToBottom();
+        }, 1500);
       }
     } catch (error) {
       console.error("Claude Terminal: Failed to start PTY", error);
@@ -947,8 +984,9 @@ export default class ClaudeTerminalPlugin extends Plugin {
         highlight.decorations.push(decoration);
 
         decoration.onRender((element) => {
-          element.style.backgroundColor = highlightColor;
-          element.style.opacity = "0.5";
+          const isDark = document.body.classList.contains("theme-dark");
+          element.style.backgroundColor = isDark ? "#854d0e" : highlightColor;
+          element.style.opacity = isDark ? "0.4" : "0.5";
           element.style.pointerEvents = "auto";
           element.dataset.highlightId = highlight.id;
           element.addClass("claude-terminal-highlight");
