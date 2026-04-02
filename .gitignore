@@ -33,3 +33,4 @@ yarn-error.log*
 # Environment
 .env
 .env.local
+SESSION_NOTES.md
