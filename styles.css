@@ -314,6 +314,13 @@
   background-color: var(--background-primary) !important;
 }
 
+/* Centered docked view: constrain terminal content to a readable column */
+.claude-terminal-view-container.is-centered .claude-terminal-content {
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+
 /* Highlight styles */
 .claude-terminal-highlight {
   cursor: pointer;

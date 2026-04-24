@@ -31,6 +31,7 @@ interface ClaudeTerminalSettings {
   floatingHeight: number;
   highlightColor: string;
   highlightSavePath: string;
+  centeredView: boolean;
 }
 
 const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
@@ -41,6 +42,7 @@ const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   floatingHeight: 350,
   highlightColor: "#fef3c7",
   highlightSavePath: "3. Resources/Highlights",
+  centeredView: false,
 };
 
 class ClaudeTerminalView extends ItemView {
@@ -77,6 +79,9 @@ class ClaudeTerminalView extends ItemView {
     const container = this.containerEl.children[1];
     container.empty();
     container.addClass("claude-terminal-view-container");
+    if (this.plugin.settings.centeredView) {
+      container.addClass("is-centered");
+    }
 
     // Create terminal content area
     const content = container.createDiv({ cls: "claude-terminal-content" });
@@ -136,6 +141,28 @@ class ClaudeTerminalView extends ItemView {
       cursor: styles.getPropertyValue("--text-accent").trim() || "#528bff",
       selectionBackground: styles.getPropertyValue("--text-selection").trim() || "#264f78",
     };
+  }
+
+  refreshTheme() {
+    if (!this.terminal) return;
+    this.terminal.options.theme = this.getObsidianTheme();
+    this.refreshHighlightStyles();
+  }
+
+  private refreshHighlightStyles() {
+    const isDark = document.body.classList.contains("theme-dark");
+    const color = this.plugin.settings.highlightColor;
+    this.containerEl.querySelectorAll<HTMLElement>(".claude-terminal-highlight").forEach((el) => {
+      el.style.backgroundColor = isDark ? "#854d0e" : color;
+      el.style.opacity = isDark ? "0.4" : "0.5";
+    });
+  }
+
+  applyCenteredClass() {
+    const container = this.containerEl.children[1] as HTMLElement | undefined;
+    if (!container) return;
+    container.classList.toggle("is-centered", this.plugin.settings.centeredView);
+    this.fitAddon?.fit();
   }
 
   private initializeTerminal(container: HTMLElement) {
@@ -534,12 +561,63 @@ export default class ClaudeTerminalPlugin extends Plugin {
       },
     });
 
+    // Toggle centered docked view
+    this.addCommand({
+      id: "toggle-claude-terminal-centered",
+      name: "Toggle centered terminal view",
+      callback: async () => {
+        this.settings.centeredView = !this.settings.centeredView;
+        await this.saveSettings();
+        this.applyCenteredClassToAllViews();
+      },
+    });
+
     // Add settings tab
     this.addSettingTab(new ClaudeTerminalSettingTab(this.app, this));
+
+    // Refresh terminal theme when Obsidian's CSS changes (system dark/light flip, manual theme switch, snippet toggle)
+    this.registerEvent(
+      this.app.workspace.on("css-change", () => this.refreshAllTerminalThemes())
+    );
 
     // Create floating container
     this.app.workspace.onLayoutReady(() => {
       this.createFloatingContainer();
+    });
+  }
+
+  private refreshAllTerminalThemes() {
+    this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_TERMINAL).forEach((leaf) => {
+      const view = leaf.view;
+      if (view instanceof ClaudeTerminalView) {
+        view.refreshTheme();
+      }
+    });
+    this.refreshFloatingTheme();
+  }
+
+  private refreshFloatingTheme() {
+    if (!this.floatingTerminal) return;
+    this.floatingTerminal.options.theme = this.getObsidianTheme();
+    this.refreshFloatingHighlightStyles();
+  }
+
+  private refreshFloatingHighlightStyles() {
+    if (!this.floatingContainer) return;
+    const isDark = document.body.classList.contains("theme-dark");
+    const color = this.settings.highlightColor;
+    this.floatingContainer.querySelectorAll<HTMLElement>(".claude-terminal-highlight").forEach((el) => {
+      el.style.backgroundColor = isDark ? "#854d0e" : color;
+      el.style.opacity = isDark ? "0.4" : "0.5";
+    });
+  }
+
+  applyCenteredClassToAllViews() {
+    this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_TERMINAL).forEach((leaf) => {
+      const view = leaf.view;
+      if (view instanceof ClaudeTerminalView) {
+        view.applyCenteredClass();
+      }
     });
   }
 
@@ -1213,6 +1291,17 @@ class ClaudeTerminalSettingTab extends PluginSettingTab {
             this.plugin.settings.fontSize = value;
             await this.plugin.saveSettings();
           })
+      );
+
+    new Setting(containerEl)
+      .setName("Centered view")
+      .setDesc("Constrain the docked terminal to a centered readable column (toggle via command: 'Toggle centered terminal view')")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.centeredView).onChange(async (value) => {
+          this.plugin.settings.centeredView = value;
+          await this.plugin.saveSettings();
+          this.plugin.applyCenteredClassToAllViews();
+        })
       );
 
     containerEl.createEl("h3", { text: "Highlights" });
