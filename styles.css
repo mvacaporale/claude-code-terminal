@@ -314,8 +314,15 @@
   background-color: var(--background-primary) !important;
 }
 
+/* When terminal is in the main editor area, add horizontal padding */
+.mod-root .claude-terminal-view-container .claude-terminal-session {
+  padding-left: 48px;
+  padding-right: 48px;
+  box-sizing: border-box;
+}
+
 /* Centered docked view: constrain terminal content to a readable column */
-.claude-terminal-view-container.is-centered .claude-terminal-content {
+.claude-terminal-view-container.is-centered .claude-terminal-session-content {
   max-width: 900px;
   width: 100%;
   margin: 0 auto;
@@ -324,41 +331,403 @@
 /* Highlight styles */
 .claude-terminal-highlight {
   cursor: pointer;
-  border-radius: 2px;
-  pointer-events: auto;
+  pointer-events: auto !important;
+  background-color: rgba(250, 200, 50, 0.35) !important;
+}
+
+.theme-dark .claude-terminal-highlight {
+  background-color: rgba(180, 140, 50, 0.30) !important;
 }
 
 .claude-terminal-highlight-popup {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 6px;
-  background-color: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s, 4px);
-  box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
+  gap: 1px;
+  padding: 1px;
+  background-color: rgba(40, 40, 40, 0.85);
+  border: none;
+  border-radius: 4px;
+  box-shadow: none;
+  vertical-align: middle;
+  margin-left: 4px;
 }
 
 .claude-terminal-highlight-btn {
   background: transparent;
   border: none;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
-  padding: 4px;
-  border-radius: var(--radius-s, 4px);
+  padding: 2px;
+  border-radius: 3px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
+}
+
+.claude-terminal-highlight-btn svg {
+  width: 12px;
+  height: 12px;
 }
 
 .claude-terminal-highlight-btn:hover {
-  background-color: var(--background-modifier-hover);
-  color: var(--text-normal);
+  background-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .claude-terminal-highlight-btn:first-child:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* ========== Tab bar ========== */
+
+.claude-terminal-tab-bar {
+  display: flex;
+  align-items: center;
+  background-color: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+  height: 36px;
+  user-select: none;
+  padding: 0 6px 0 2px;
+  gap: 2px;
+}
+
+.claude-terminal-tabs-scroll {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
+}
+
+.claude-terminal-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.claude-terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 28px;
+  margin: 3px 0;
+  cursor: pointer;
+  position: relative;
+  border-right: none;
+  border-radius: var(--radius-s, 4px);
+  flex-shrink: 1;
+  min-width: 60px;
+  max-width: 180px;
+  transition: background-color 120ms ease;
+}
+
+.claude-terminal-tab:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.claude-terminal-tab.is-active {
+  background-color: var(--background-primary);
+}
+
+.claude-terminal-tab.is-active::after {
+  content: none;
+}
+
+.claude-terminal-tab-name {
+  font-size: var(--font-ui-small, 12px);
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  line-height: 28px;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+}
+
+.claude-terminal-tab.is-active .claude-terminal-tab-name {
+  color: var(--text-normal);
+  font-weight: var(--font-semibold, 600);
+}
+
+.claude-terminal-tab:hover .claude-terminal-tab-name {
+  color: var(--text-normal);
+}
+
+.claude-terminal-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-s, 4px);
+  opacity: 0;
+  transition: opacity 100ms ease, background-color 100ms ease;
+  flex-shrink: 0;
+  cursor: pointer;
+  color: var(--text-faint);
+}
+
+.claude-terminal-tab-close svg {
+  width: 10px;
+  height: 10px;
+}
+
+.claude-terminal-tab:hover .claude-terminal-tab-close,
+.claude-terminal-tab.is-active .claude-terminal-tab-close {
+  opacity: 1;
+}
+
+.claude-terminal-tab-close:hover {
   background-color: var(--background-modifier-error, #e81123);
   color: var(--text-on-accent, white);
+}
+
+.claude-terminal-tab-rename {
+  font-size: var(--font-ui-small, 12px);
+  font-weight: 500;
+  color: var(--text-normal);
+  background: var(--background-primary);
+  border: 1px solid var(--interactive-accent);
+  border-radius: var(--radius-s, 4px);
+  padding: 1px 4px;
+  width: 110px;
+  outline: none;
+  font-family: var(--font-interface, inherit);
+}
+
+.claude-terminal-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding-left: 6px;
+  margin-left: 2px;
+  border-left: 1px solid var(--background-modifier-border);
+}
+
+.claude-terminal-tab-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--clickable-icon-radius, 4px);
+  cursor: pointer;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.claude-terminal-tab-action:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+.claude-terminal-tab-action svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Highlighter toggle states */
+
+.claude-terminal-highlight-toggle {
+  position: relative;
+}
+
+.claude-terminal-highlight-toggle.is-active {
+  color: var(--text-muted);
+}
+
+.claude-terminal-highlight-toggle.is-active:hover {
+  color: var(--text-normal);
+}
+
+.claude-terminal-highlight-toggle.is-disabled {
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+.claude-terminal-highlight-toggle.is-disabled::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 50%;
+  height: 1.5px;
+  background: currentColor;
+  transform: rotate(-20deg);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* Drag-and-drop tab reorder */
+
+.claude-terminal-tab.is-dragging {
+  opacity: 0.4;
+}
+
+.claude-terminal-tab.drop-before::before,
+.claude-terminal-tab.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--interactive-accent);
+  border-radius: 2px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.claude-terminal-tab.drop-before::before { left: -1px; }
+.claude-terminal-tab.drop-after::after { right: -1px; }
+
+/* Restored session indicator */
+
+.claude-terminal-tab.is-restored .claude-terminal-tab-name::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  background: var(--text-accent, var(--interactive-accent));
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  opacity: 0.8;
+}
+
+/* Sessions container */
+
+.claude-terminal-sessions-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.claude-terminal-session {
+  width: 100%;
+  height: 100%;
+  display: none;
+  flex-direction: column;
+}
+
+.claude-terminal-session-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px 4px 0 4px;
+}
+
+.claude-terminal-session-content .xterm {
+  height: 100%;
+  width: 100%;
+}
+
+.claude-terminal-session-content .xterm-viewport {
+  background-color: var(--background-primary) !important;
+}
+
+/* Scrollbar */
+.claude-terminal-session-content .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+.claude-terminal-session-content .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.claude-terminal-session-content .xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.claude-terminal-session-content .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+.theme-light .claude-terminal-session-content .xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.theme-light .claude-terminal-session-content .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+/* History dropdown */
+
+.claude-terminal-history-dropdown {
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.2));
+  padding: 4px;
+  min-width: 180px;
+  max-width: 300px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.claude-terminal-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: var(--radius-s, 4px);
+  cursor: pointer;
+  transition: background-color 100ms ease;
+}
+
+.claude-terminal-history-item:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.claude-terminal-history-name {
+  font-size: var(--font-ui-small, 13px);
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.claude-terminal-history-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-s, 4px);
+  color: var(--text-faint);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 100ms ease, background-color 100ms ease, color 100ms ease;
+}
+
+.claude-terminal-history-item:hover .claude-terminal-history-delete {
+  opacity: 1;
+}
+
+.claude-terminal-history-delete:hover {
+  background-color: var(--background-modifier-error, #e81123);
+  color: var(--text-on-accent, white);
+}
+
+.claude-terminal-history-delete svg {
+  width: 12px;
+  height: 12px;
 }
