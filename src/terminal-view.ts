@@ -7,6 +7,7 @@ import type ClaudeTerminalPlugin from "./main";
 export class ClaudeTerminalView extends ItemView {
   private plugin: ClaudeTerminalPlugin;
   private manager: TerminalSessionManager | null = null;
+  private initTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudeTerminalPlugin) {
     super(leaf);
@@ -37,7 +38,8 @@ export class ClaudeTerminalView extends ItemView {
     const tabBar = container.createDiv({ cls: "claude-terminal-tab-bar" });
     const sessionsContainer = container.createDiv({ cls: "claude-terminal-sessions-container" });
 
-    setTimeout(() => {
+    this.initTimer = setTimeout(() => {
+      this.initTimer = null;
       this.manager = new TerminalSessionManager(this.plugin, tabBar, sessionsContainer, true);
       const restored = this.plugin.settings.restoreSessionsOnStartup
         ? this.manager.restoreSessions()
@@ -91,6 +93,12 @@ export class ClaudeTerminalView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    // If the leaf closes before the deferred init fires, cancel it so no
+    // orphaned manager/PTY gets created.
+    if (this.initTimer) {
+      clearTimeout(this.initTimer);
+      this.initTimer = null;
+    }
     await super.onClose();
     this.manager?.persistSessions();
     this.manager?.destroyAll();

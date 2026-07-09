@@ -131,8 +131,12 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
   addSessionToHistory(name: string, sessionId?: string) {
     const history = this.settings.sessionHistory;
+    // Preserve a previously detected session id when re-adding the same name
+    // without one (e.g. a fresh tab created before detection has run) —
+    // otherwise the history entry's resume target gets wiped.
+    const existing = history.find(e => e.name === name);
     const filtered = history.filter(e => e.name !== name);
-    filtered.push({ name, sessionId });
+    filtered.push({ name, sessionId: sessionId ?? existing?.sessionId });
     if (filtered.length > 30) {
       filtered.splice(0, filtered.length - 30);
     }
@@ -172,10 +176,13 @@ export default class ClaudeTerminalPlugin extends Plugin {
     this.forEachView(view => view.applyCenteredClass());
   }
 
+  /** Absolute filesystem path of the vault root (single home for the adapter cast). */
+  getVaultPath(): string {
+    return (this.app.vault.adapter as FileSystemAdapter).getBasePath();
+  }
+
   getPluginPath(): string {
-    const adapter = this.app.vault.adapter as FileSystemAdapter;
-    const basePath = adapter.getBasePath();
-    const pluginPath = path.join(basePath, this.app.vault.configDir, "plugins", "claude-code-terminal");
+    const pluginPath = path.join(this.getVaultPath(), this.app.vault.configDir, "plugins", "claude-code-terminal");
     try {
       return fs.realpathSync(pluginPath);
     } catch {
@@ -229,7 +236,7 @@ export default class ClaudeTerminalPlugin extends Plugin {
   async saveHighlights() {
     const allHighlights: TerminalHighlight[] = [...this.floating.getAllHighlights()];
     this.forEachView(view => allHighlights.push(...view.getAllHighlights()));
-    await saveHighlightsToVault(this.app, this.settings, allHighlights);
+    await saveHighlightsToVault(this.getVaultPath(), this.settings, allHighlights);
   }
 
   private clearAllHighlights() {

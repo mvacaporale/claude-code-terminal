@@ -1,14 +1,13 @@
-import { FileSystemAdapter, Notice, setIcon } from "obsidian";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import * as path from "path";
 import type {
   PersistedSession,
-  SessionHistoryEntry,
   TerminalHighlight,
   TerminalSession,
 } from "./types";
 import { HighlightController } from "./highlights";
+import { TerminalTabBar } from "./tab-bar";
 import { watchForClaudeSessionId } from "./claude-session";
 import { cleanCopyText, normalizeCssColor } from "./text-utils";
 import type ClaudeTerminalPlugin from "./main";
@@ -27,16 +26,12 @@ export class TerminalSessionManager {
   private sessionCounter = 0;
   private plugin: ClaudeTerminalPlugin;
   private tabBar: HTMLElement;
+  private tabBarUi: TerminalTabBar;
   private sessionsContainer: HTMLElement;
   private highlighter: HighlightController;
-  private clickTimer: NodeJS.Timeout | null = null;
-  private clickedTabId: string | null = null;
   private nodePtyModule: NodePtyModule | null = null;
   private persist: boolean;
   private isRestoring = false;
-  private draggedSessionId: string | null = null;
-  private activeHistoryDropdown: HTMLElement | null = null;
-  private historyCloseHandler: ((e: MouseEvent) => void) | null = null;
 
   constructor(plugin: ClaudeTerminalPlugin, tabBar: HTMLElement, sessionsContainer: HTMLElement, persist = false) {
     this.plugin = plugin;
@@ -44,6 +39,22 @@ export class TerminalSessionManager {
     this.sessionsContainer = sessionsContainer;
     this.persist = persist;
     this.highlighter = new HighlightController(() => this.plugin.settings);
+    this.tabBarUi = new TerminalTabBar(tabBar, {
+      onSwitch: (id) => this.switchToSession(id),
+      onClose: (id) => this.closeSession(id),
+      onRename: (id, name) => this.renameSession(id, name),
+      onReorder: (fromId, toId, before) => this.reorderSession(fromId, toId, before),
+      onNewSession: (name, resume, claudeSessionId) =>
+        this.createSession(name, resume, false, claudeSessionId),
+      onToggleHighlight: async () => {
+        this.plugin.settings.highlightingEnabled = !this.plugin.settings.highlightingEnabled;
+        await this.plugin.saveSettings();
+      },
+      getSessions: () => this.sessions,
+      getActiveSessionId: () => this.activeSessionId,
+      getSettings: () => this.plugin.settings,
+      saveSettings: () => this.plugin.saveSettings(),
+    });
 
     // Pre-cache node-pty module
     try {
@@ -69,16 +80,10 @@ export class TerminalSessionManager {
     const container = this.sessionsContainer.createDiv({ cls: "claude-terminal-session" });
     const content = container.createDiv({ cls: "claude-terminal-session-content" });
 
-    const theme = this.getObsidianTheme();
     const terminal = new Terminal({
       fontSize: this.plugin.settings.fontSize,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: {
-        background: theme.background,
-        foreground: theme.foreground,
-        cursor: theme.cursor,
-        selectionBackground: theme.selectionBackground,
-      },
+      theme: this.getObsidianTheme(),
       cursorBlink: true,
       cursorStyle: "bar",
       allowTransparency: true,
@@ -303,7 +308,7 @@ export class TerminalSessionManager {
   }
 
   destroyAll() {
-    this.closeHistoryMenu();
+    this.tabBarUi.closeHistoryMenu();
     this.sessions.forEach(s => this.destroySession(s));
     this.sessions.clear();
     this.activeSessionId = null;
@@ -365,7 +370,7 @@ export class TerminalSessionManager {
         throw new Error("node-pty module not loaded");
       }
 
-      const vaultPath = (this.plugin.app.vault.adapter as FileSystemAdapter).getBasePath();
+      const vaultPath = this.plugin.getVaultPath();
 
       session.ptyProcess = this.nodePtyModule.spawn(this.plugin.settings.shellPath, [], {
         name: "xterm-256color",
@@ -417,19 +422,24 @@ export class TerminalSessionManager {
   }
 
   private detectClaudeSessionId(session: TerminalSession) {
-    // If we already have a session ID (resuming from history), no need to detect
-    if (session.claudeSessionId) return;
-
     const shellPid = session.ptyProcess?.pid;
     if (!shellPid) return;
 
-    const vaultPath = (this.plugin.app.vault.adapter as FileSystemAdapter).getBasePath();
+    const vaultPath = this.plugin.getVaultPath();
+
+    // For restored/resumed sessions, claudeSessionId holds the OLD id:
+    // `claude --resume <id>` forks the conversation into a NEW session id.
+    // We must detect that new id and re-persist it, otherwise every reload
+    // resumes the stale pre-fork snapshot and recent work appears lost.
+    const initialId = session.claudeSessionId;
 
     watchForClaudeSessionId({
       shellPid,
       vaultPath,
-      isSettled: () => session.claudeSessionId !== null,
+      isSettled: () =>
+        session.claudeSessionId !== null && session.claudeSessionId !== initialId,
       onDetected: (sessionId) => {
+        if (sessionId === initialId) return; // stale read; keep polling
         session.claudeSessionId = sessionId;
         this.plugin.updateSessionHistoryId(session.name, sessionId);
         this.persistSessions();
@@ -439,244 +449,8 @@ export class TerminalSessionManager {
 
   // ---- Tab bar ----
 
+  /** Thin delegator so external call sites (views, floating window) keep a stable API. */
   renderTabBar() {
-    // Preserve scroll position across re-renders
-    const prevScroll = this.tabBar.querySelector(".claude-terminal-tabs-scroll");
-    const savedScrollLeft = prevScroll ? prevScroll.scrollLeft : 0;
-
-    this.tabBar.empty();
-
-    const tabsScroll = this.tabBar.createDiv({ cls: "claude-terminal-tabs-scroll" });
-
-    this.sessions.forEach((session) => {
-      const tab = tabsScroll.createDiv({
-        cls: `claude-terminal-tab ${session.id === this.activeSessionId ? "is-active" : ""}${session.isRestored ? " is-restored" : ""}`,
-      });
-      tab.draggable = true;
-
-      // Drag-and-drop reordering
-      tab.addEventListener("dragstart", (e) => {
-        this.draggedSessionId = session.id;
-        tab.addClass("is-dragging");
-        if (e.dataTransfer) {
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", session.id);
-        }
-      });
-      tab.addEventListener("dragend", () => {
-        this.draggedSessionId = null;
-        tab.removeClass("is-dragging");
-        tabsScroll.querySelectorAll(".claude-terminal-tab").forEach(t => {
-          t.removeClass("drop-before");
-          t.removeClass("drop-after");
-        });
-      });
-      tab.addEventListener("dragover", (e) => {
-        if (!this.draggedSessionId || this.draggedSessionId === session.id) return;
-        e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-        const rect = tab.getBoundingClientRect();
-        const before = (e.clientX - rect.left) < rect.width / 2;
-        tab.toggleClass("drop-before", before);
-        tab.toggleClass("drop-after", !before);
-      });
-      tab.addEventListener("dragleave", () => {
-        tab.removeClass("drop-before");
-        tab.removeClass("drop-after");
-      });
-      tab.addEventListener("drop", (e) => {
-        e.preventDefault();
-        const fromId = this.draggedSessionId;
-        if (!fromId || fromId === session.id) return;
-        const rect = tab.getBoundingClientRect();
-        const before = (e.clientX - rect.left) < rect.width / 2;
-        this.reorderSession(fromId, session.id, before);
-      });
-
-      const nameSpan = tab.createSpan({ cls: "claude-terminal-tab-name", text: session.name });
-
-      // Click timer: single click = switch, double click = rename
-      nameSpan.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (this.clickedTabId === session.id && this.clickTimer) {
-          // Double click
-          clearTimeout(this.clickTimer);
-          this.clickTimer = null;
-          this.clickedTabId = null;
-          this.startRenameTab(session.id, nameSpan);
-        } else {
-          // First click — wait for possible double
-          if (this.clickTimer) clearTimeout(this.clickTimer);
-          this.clickedTabId = session.id;
-          this.clickTimer = setTimeout(() => {
-            this.clickTimer = null;
-            this.clickedTabId = null;
-            this.switchToSession(session.id);
-          }, 250);
-        }
-      });
-
-      // Click on tab background (not name) switches immediately
-      tab.addEventListener("click", (e) => {
-        if (!(e.target as HTMLElement).closest(".claude-terminal-tab-close") &&
-            !(e.target as HTMLElement).closest(".claude-terminal-tab-name")) {
-          this.switchToSession(session.id);
-        }
-      });
-
-      // Close button (only if more than 1 session)
-      if (this.sessions.size > 1) {
-        const closeBtn = tab.createSpan({ cls: "claude-terminal-tab-close" });
-        setIcon(closeBtn, "x");
-        closeBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.closeSession(session.id);
-        });
-      }
-    });
-
-    // Action buttons wrapper (stays visible even when tabs overflow)
-    const actionsWrapper = this.tabBar.createDiv({ cls: "claude-terminal-tab-actions" });
-
-    // Highlighter toggle button
-    const highlightOn = this.plugin.settings.highlightingEnabled;
-    const highlightBtn = actionsWrapper.createDiv({
-      cls: `claude-terminal-tab-action claude-terminal-highlight-toggle ${highlightOn ? "is-active" : "is-disabled"}`,
-      attr: { "aria-label": highlightOn ? "Highlighting: on" : "Highlighting: off" },
-    });
-    setIcon(highlightBtn, "highlighter");
-    highlightBtn.title = highlightOn ? "Highlighting: on (click to disable)" : "Highlighting: off (click to enable)";
-    highlightBtn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      this.plugin.settings.highlightingEnabled = !this.plugin.settings.highlightingEnabled;
-      await this.plugin.saveSettings();
-      this.renderTabBar();
-    });
-
-    // New tab button
-    const newBtn = actionsWrapper.createDiv({ cls: "claude-terminal-tab-action", attr: { "aria-label": "New session" } });
-    setIcon(newBtn, "plus");
-    newBtn.title = "New session";
-    newBtn.addEventListener("click", () => this.createSession());
-
-    // History button
-    if (this.plugin.settings.sessionHistory.length > 0) {
-      const historyBtn = actionsWrapper.createDiv({ cls: "claude-terminal-tab-action", attr: { "aria-label": "Recent sessions" } });
-      setIcon(historyBtn, "clock");
-      historyBtn.title = "Open recent session";
-      historyBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.showHistoryMenu(historyBtn);
-      });
-    }
-
-    // Restore scroll position
-    if (savedScrollLeft > 0) {
-      tabsScroll.scrollLeft = savedScrollLeft;
-    }
-  }
-
-  private startRenameTab(sessionId: string, nameSpan: HTMLElement) {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-
-    const input = document.createElement("input");
-    input.type = "text";
-    input.value = session.name;
-    input.className = "claude-terminal-tab-rename";
-
-    const commit = () => {
-      this.renameSession(sessionId, input.value);
-    };
-
-    input.addEventListener("blur", commit);
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        input.blur();
-      } else if (e.key === "Escape") {
-        input.value = session.name;
-        input.blur();
-      }
-    });
-
-    nameSpan.replaceWith(input);
-    input.focus();
-    input.select();
-  }
-
-  private showHistoryMenu(anchor: HTMLElement) {
-    // Close any existing history dropdown
-    this.closeHistoryMenu();
-
-    const history = this.plugin.settings.sessionHistory;
-    const seen = new Set<string>();
-    const entries: SessionHistoryEntry[] = [];
-    for (let i = history.length - 1; i >= 0; i--) {
-      const entry = history[i];
-      if (seen.has(entry.name)) continue;
-      seen.add(entry.name);
-      entries.push(entry);
-      if (seen.size >= 15) break;
-    }
-
-    if (entries.length === 0) {
-      new Notice("No session history yet");
-      return;
-    }
-
-    const dropdown = document.createElement("div");
-    dropdown.className = "claude-terminal-history-dropdown";
-    const rect = anchor.getBoundingClientRect();
-    dropdown.style.position = "fixed";
-    dropdown.style.right = `${window.innerWidth - rect.right}px`;
-    dropdown.style.top = `${rect.bottom + 4}px`;
-    dropdown.style.zIndex = "10000";
-
-    for (const entry of entries) {
-      const row = dropdown.createDiv({ cls: "claude-terminal-history-item" });
-
-      const nameEl = row.createSpan({ cls: "claude-terminal-history-name", text: entry.name });
-      nameEl.addEventListener("click", () => {
-        this.closeHistoryMenu();
-        this.createSession(entry.name, true);
-      });
-
-      const delBtn = row.createSpan({ cls: "claude-terminal-history-delete" });
-      setIcon(delBtn, "x");
-      delBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.plugin.settings.sessionHistory = this.plugin.settings.sessionHistory
-          .filter((h) => h.name !== entry.name);
-        void this.plugin.saveSettings();
-        row.remove();
-        // Close if empty
-        if (dropdown.childElementCount === 0) this.closeHistoryMenu();
-      });
-    }
-
-    document.body.appendChild(dropdown);
-    this.activeHistoryDropdown = dropdown;
-
-    // Close on click outside
-    const closeHandler = (e: MouseEvent) => {
-      if (!dropdown.contains(e.target as Node) && e.target !== anchor) {
-        this.closeHistoryMenu();
-        document.removeEventListener("mousedown", closeHandler, true);
-      }
-    };
-    document.addEventListener("mousedown", closeHandler, true);
-    this.historyCloseHandler = closeHandler;
-  }
-
-  private closeHistoryMenu() {
-    if (this.activeHistoryDropdown) {
-      this.activeHistoryDropdown.remove();
-      this.activeHistoryDropdown = null;
-    }
-    if (this.historyCloseHandler) {
-      document.removeEventListener("mousedown", this.historyCloseHandler, true);
-      this.historyCloseHandler = null;
-    }
+    this.tabBarUi.render();
   }
 }

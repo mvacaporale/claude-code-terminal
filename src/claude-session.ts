@@ -35,7 +35,9 @@ export function watchForClaudeSessionId(options: DetectOptions): void {
 
         if (sessionId) {
           options.onDetected(sessionId);
-          return;
+          // onDetected may reject the id (e.g. a stale read of the pre-resume
+          // session); keep polling until the caller reports settled.
+          if (options.isSettled()) return;
         }
         attempt(n + 1);
       })();

@@ -1,4 +1,4 @@
-import { App, FileSystemAdapter, Notice, setIcon } from "obsidian";
+import { Notice, setIcon } from "obsidian";
 import * as path from "path";
 import * as fs from "fs";
 import type { ClaudeTerminalSettings, TerminalHighlight, TerminalSession } from "./types";
@@ -50,8 +50,7 @@ export class HighlightController {
         endCol = h.endCol;
       }
       // Remove the old highlight
-      h.decorations.forEach(d => d.dispose());
-      h.markers.forEach(m => m.dispose());
+      this.disposeHighlight(h);
       session.highlights = session.highlights.filter(x => x.id !== h.id);
     }
 
@@ -95,17 +94,13 @@ export class HighlightController {
     if (index === -1) return;
 
     const highlight = session.highlights[index];
-    highlight.decorations.forEach(d => d.dispose());
-    highlight.markers.forEach(m => m.dispose());
+    this.disposeHighlight(highlight);
     session.highlights.splice(index, 1);
     this.hidePopup(session);
   }
 
   clearAll(session: TerminalSession) {
-    session.highlights.forEach(h => {
-      h.decorations.forEach(d => d.dispose());
-      h.markers.forEach(m => m.dispose());
-    });
+    session.highlights.forEach(h => this.disposeHighlight(h));
     session.highlights = [];
     this.hidePopup(session);
   }
@@ -120,6 +115,12 @@ export class HighlightController {
   }
 
   // ---- Private ----
+
+  /** Release the xterm decorations and markers backing a highlight. */
+  private disposeHighlight(h: TerminalHighlight) {
+    h.decorations.forEach(d => d.dispose());
+    h.markers.forEach(m => m.dispose());
+  }
 
   private render(session: TerminalSession, highlight: TerminalHighlight) {
     const buffer = session.terminal.buffer.active;
@@ -255,7 +256,7 @@ export class HighlightController {
  * section if today's file already exists.
  */
 export async function saveHighlightsToVault(
-  app: App,
+  vaultPath: string,
   settings: ClaudeTerminalSettings,
   highlights: TerminalHighlight[],
 ): Promise<void> {
@@ -290,8 +291,7 @@ summary: Highlights from Claude Code terminal session
   const fileName = `Claude Terminal - ${dateStr}.md`;
 
   try {
-    const adapter = app.vault.adapter as FileSystemAdapter;
-    const fullFolderPath = path.join(adapter.getBasePath(), folderPath);
+    const fullFolderPath = path.join(vaultPath, folderPath);
     if (!fs.existsSync(fullFolderPath)) {
       fs.mkdirSync(fullFolderPath, { recursive: true });
     }

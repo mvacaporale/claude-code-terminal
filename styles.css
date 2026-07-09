@@ -251,12 +251,18 @@
   position: relative;
 }
 
-.claude-terminal-content .xterm {
+/* Make xterm fill its container and match the Obsidian background, in the
+   floating panel, docked views, and per-session content alike */
+.claude-terminal-content .xterm,
+.claude-terminal-view-container .xterm,
+.claude-terminal-session-content .xterm {
   height: 100%;
   width: 100%;
 }
 
-.claude-terminal-content .xterm-viewport {
+.claude-terminal-content .xterm-viewport,
+.claude-terminal-view-container .xterm-viewport,
+.claude-terminal-session-content .xterm-viewport {
   background-color: var(--background-primary) !important;
 }
 
@@ -303,15 +309,6 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-}
-
-.claude-terminal-view-container .xterm {
-  height: 100%;
-  width: 100%;
-}
-
-.claude-terminal-view-container .xterm-viewport {
-  background-color: var(--background-primary) !important;
 }
 
 /* When terminal is in the main editor area, add horizontal padding */
@@ -413,7 +410,10 @@
   scrollbar-width: none;
 }
 
-.claude-terminal-tabs-scroll::-webkit-scrollbar {
+/* Hide scrollbars on the tab strip and the terminal viewport
+   (scrolling still works via wheel/trackpad) */
+.claude-terminal-tabs-scroll::-webkit-scrollbar,
+.claude-terminal-session-content .xterm-viewport::-webkit-scrollbar {
   display: none;
 }
 
@@ -629,20 +629,6 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-}
-
-.claude-terminal-session-content .xterm {
-  height: 100%;
-  width: 100%;
-}
-
-.claude-terminal-session-content .xterm-viewport {
-  background-color: var(--background-primary) !important;
-}
-
-/* Hide the terminal scrollbar (scrolling still works via wheel/trackpad) */
-.claude-terminal-session-content .xterm-viewport::-webkit-scrollbar {
-  display: none;
 }
 
 /* History dropdown */
