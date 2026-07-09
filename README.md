@@ -1,3 +1,11 @@
+---
+type: note
+tags: [obsidian-plugin, claude-code, terminal, ai-tools]
+context:
+last_edited: 2026-07-09
+summary: Documentation for the Claude Code Terminal Obsidian plugin, detailing installation, features, usage, and configuration for AI coding assistance.
+---
+
 # Claude Code Terminal
 
 An embedded terminal plugin for Obsidian that integrates with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Anthropic's AI coding assistant.

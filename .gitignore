@@ -34,3 +34,6 @@ yarn-error.log*
 .env
 .env.local
 SESSION_NOTES.md
+
+# Claude Code local settings/worktrees
+.claude/
