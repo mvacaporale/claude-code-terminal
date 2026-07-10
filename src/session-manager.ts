@@ -11,6 +11,7 @@ import type {
 import { HighlightController } from "./highlights";
 import { TerminalTabBar } from "./tab-bar";
 import { makeLocalProbe, watchForClaudeSessionId } from "./claude-session";
+import { debugLog } from "./debug";
 import { buildRemoteLaunchCommand, killRemoteTmuxSession, makeTmuxName, probeRemoteSessionId } from "./remote";
 import { cleanCopyText, normalizeCssColor } from "./text-utils";
 import type ClaudeTerminalPlugin from "./main";
@@ -175,19 +176,30 @@ export class TerminalSessionManager {
     });
 
     // Auto-highlight on selection (gated by setting)
-    let dragStart: { x: number; y: number } | null = null;
+    let dragStart: { x: number; y: number; alt: boolean } | null = null;
     terminal.element?.addEventListener("mousedown", (e) => {
-      dragStart = { x: e.clientX, y: e.clientY };
+      dragStart = { x: e.clientX, y: e.clientY, alt: e.altKey };
     });
     terminal.element?.addEventListener("mouseup", (e) => {
-      if (!this.plugin.settings.highlightingEnabled) return;
       const dragged = dragStart
         && Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 10;
+      const altHeld = dragStart?.alt ?? false;
       dragStart = null;
       setTimeout(() => {
         const selection = terminal.getSelection();
+        debugLog(this.plugin.getVaultPath(),
+          `mouseup session=${session.name} hlEnabled=${this.plugin.settings.highlightingEnabled} ` +
+          `dragged=${!!dragged} alt=${altHeld} mouseTracking=${terminal.modes.mouseTrackingMode} ` +
+          `buffer=${terminal.buffer.active.type} selLen=${selection.length} ` +
+          `selPos=${JSON.stringify(terminal.getSelectionPosition() ?? null)} ` +
+          `selBg=${terminal.options.theme?.selectionBackground}`);
+        if (!this.plugin.settings.highlightingEnabled) return;
         if (selection && selection.trim().length > 0) {
           this.highlighter.createFromSelection(session);
+          const last = session.highlights[session.highlights.length - 1];
+          debugLog(this.plugin.getVaultPath(),
+            `highlight created id=${last?.id} buffer=${last?.bufferType} ` +
+            `overlayEls=${last?.overlayEls.length} decorations=${last?.decorations.length}`);
         } else if (dragged && terminal.modes.mouseTrackingMode !== "none" && !this.mouseHintShown) {
           // The drag went to the app (full-screen TUIs capture the mouse), so
           // xterm never saw a selection. Tell the user about the bypass, once.

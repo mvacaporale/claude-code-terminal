@@ -12,6 +12,7 @@ import { ClaudeTerminalView } from "./terminal-view";
 import { FloatingWindow } from "./floating-window";
 import { ClaudeTerminalSettingTab } from "./settings-tab";
 import { saveHighlightsToVault } from "./highlights";
+import { debugLog } from "./debug";
 
 export default class ClaudeTerminalPlugin extends Plugin {
   settings: ClaudeTerminalSettings = DEFAULT_SETTINGS;
@@ -19,6 +20,8 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    debugLog(this.getVaultPath(), "plugin loaded — debug build hl-diag-1");
+    new Notice("Claude Terminal: debug build hl-diag-1 loaded");
 
     this.registerView(VIEW_TYPE_CLAUDE_TERMINAL, (leaf) => new ClaudeTerminalView(leaf, this));
 
