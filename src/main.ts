@@ -20,8 +20,8 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
-    debugLog(this.getVaultPath(), "plugin loaded — debug build hl-diag-4");
-    new Notice("Claude Terminal: debug build hl-diag-4 loaded");
+    debugLog(this.getVaultPath(), "plugin loaded — debug build hl-diag-5");
+    new Notice("Claude Terminal: debug build hl-diag-5 loaded");
 
     this.registerView(VIEW_TYPE_CLAUDE_TERMINAL, (leaf) => new ClaudeTerminalView(leaf, this));
 

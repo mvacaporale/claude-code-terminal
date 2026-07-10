@@ -283,15 +283,9 @@ export class HighlightController {
     const popup = document.createElement("div");
     popup.addClass("claude-terminal-highlight-popup");
 
-    const deleteBtn = popup.createEl("button", { cls: "claude-terminal-highlight-btn" });
-    setIcon(deleteBtn, "x");
-    deleteBtn.title = "Remove highlight";
-    deleteBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.remove(session, highlight.id);
-    });
-
-    const copyBtn = popup.createEl("button", { cls: "claude-terminal-highlight-btn" });
+    // "clickable-icon" opts the buttons out of Obsidian's default form-button
+    // chrome (its button:not(.clickable-icon) rule outranks a single class)
+    const copyBtn = popup.createEl("button", { cls: "clickable-icon claude-terminal-highlight-btn" });
     setIcon(copyBtn, "copy");
     copyBtn.title = "Copy to clipboard";
     copyBtn.addEventListener("click", (e) => {
@@ -300,14 +294,23 @@ export class HighlightController {
       new Notice("Copied to clipboard");
     });
 
+    const deleteBtn = popup.createEl("button", { cls: "clickable-icon claude-terminal-highlight-btn" });
+    setIcon(deleteBtn, "x");
+    deleteBtn.title = "Remove highlight";
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.remove(session, highlight.id);
+    });
+
     // Anchor the popup to the last decoration element (end of the highlight)
     const lastDecEl = this.findLastHighlightElement(session, highlight);
     const anchorEl = lastDecEl || element;
 
     const rect = anchorEl.getBoundingClientRect();
     popup.style.position = "fixed";
-    popup.style.top = `${rect.top + (rect.height - 22) / 2}px`;
-    popup.style.left = `${rect.right + 4}px`;
+    // 32 = button 24 + padding 3*2 + border 1*2 (keep in sync with styles.css)
+    popup.style.top = `${rect.top + (rect.height - 32) / 2}px`;
+    popup.style.left = `${rect.right + 6}px`;
     popup.style.zIndex = "10000";
 
     popup.addEventListener("mouseenter", () => this.cancelHidePopup(session));
