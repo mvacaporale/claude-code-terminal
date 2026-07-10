@@ -4,6 +4,7 @@ import * as fs from "fs";
 import {
   ClaudeTerminalSettings,
   DEFAULT_SETTINGS,
+  RemoteInfo,
   TerminalHighlight,
   VIEW_TYPE_CLAUDE_TERMINAL,
 } from "./types";
@@ -129,14 +130,14 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
   // ---- Session history ----
 
-  addSessionToHistory(name: string, sessionId?: string) {
+  addSessionToHistory(name: string, sessionId?: string, remote?: RemoteInfo) {
     const history = this.settings.sessionHistory;
     // Preserve a previously detected session id when re-adding the same name
     // without one (e.g. a fresh tab created before detection has run) —
     // otherwise the history entry's resume target gets wiped.
     const existing = history.find(e => e.name === name);
     const filtered = history.filter(e => e.name !== name);
-    filtered.push({ name, sessionId: sessionId ?? existing?.sessionId });
+    filtered.push({ name, sessionId: sessionId ?? existing?.sessionId, remote: remote ?? existing?.remote });
     if (filtered.length > 30) {
       filtered.splice(0, filtered.length - 30);
     }

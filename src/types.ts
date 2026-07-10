@@ -16,10 +16,23 @@ export interface TerminalHighlight {
   markers: IMarker[];
 }
 
+/**
+ * A session running on a remote host over SSH inside a named tmux session.
+ * Host/path are snapshotted at creation so persisted entries stay valid
+ * even if the settings change later. tmuxName is generated once and never
+ * derived from the (renamable) tab name.
+ */
+export interface RemoteInfo {
+  host: string;
+  path: string;
+  tmuxName: string;
+}
+
 export interface TerminalSession {
   id: string;
   name: string;
   claudeSessionId: string | null;
+  remote: RemoteInfo | null;
   terminal: Terminal;
   fitAddon: FitAddon;
   ptyProcess: IPty | null;
@@ -36,11 +49,13 @@ export interface TerminalSession {
 export interface SessionHistoryEntry {
   name: string;
   sessionId?: string;
+  remote?: RemoteInfo;
 }
 
 export interface PersistedSession {
   name: string;
   claudeSessionId?: string;
+  remote?: RemoteInfo;
 }
 
 export interface ClaudeTerminalSettings {
@@ -57,6 +72,8 @@ export interface ClaudeTerminalSettings {
   restoreSessionsOnStartup: boolean;
   cleanCopy: boolean;
   persistedSessions: PersistedSession[];
+  remoteHost: string;
+  remoteVaultPath: string;
 }
 
 export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
@@ -73,4 +90,6 @@ export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   restoreSessionsOnStartup: true,
   cleanCopy: true,
   persistedSessions: [],
+  remoteHost: "",
+  remoteVaultPath: "",
 };

@@ -102,6 +102,24 @@ Open Settings > Claude Terminal:
 | Shell path | Path to shell executable | `/bin/zsh` (macOS/Linux) or `powershell.exe` (Windows) |
 | Auto-launch Claude | Run `claude` command on terminal open | Enabled |
 | Font size | Terminal font size | 13px |
+| Remote host | SSH destination for remote sessions | Empty (disabled) |
+| Remote working directory | Directory Claude runs in on the remote | Empty |
+
+## Remote Sessions
+
+You can run Claude Code on a remote machine (e.g. an always-on server holding a synced copy of your vault) instead of locally.
+
+**Requirements on the remote:** the `claude` CLI installed and logged in, `tmux`, and key-based SSH access (connecting must not prompt for a password). Your local shell must be POSIX-compatible (zsh/bash — fish is not supported for remote sessions). Setting up an alias in `~/.ssh/config` is the easiest way to configure the connection.
+
+**Setup:** fill in *Remote host* (an ssh alias or `user@host`) and *Remote working directory* in the plugin settings.
+
+**Creating a remote session:** shift+click the **+** button in the tab bar, or right-click it and choose "New session on \<host\>". Remote tabs show a small server icon.
+
+**Lifecycle:** each remote tab runs inside a named tmux session on the remote, so:
+- Closing the tab (x) only **detaches** — Claude keeps running on the remote.
+- Reopening (via the history dropdown or automatic restore on Obsidian reload) **reattaches** with scrollback and in-flight work intact.
+- To actually stop one, right-click the tab and choose **Kill remote session**.
+- If the remote machine rebooted, reopening recreates the session with `claude --resume`, continuing the same conversation.
 
 ## Claude Code Setup
 

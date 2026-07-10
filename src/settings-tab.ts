@@ -117,6 +117,36 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
         })
       );
 
+    containerEl.createEl("h3", { text: "Remote sessions" });
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Run Claude Code on a remote machine over SSH inside a tmux session (shift+click the + button, or right-click it to choose). Remote sessions keep running when you close their tab — closing detaches, and reopening reattaches with scrollback intact. Requires key-based SSH access plus the claude CLI (logged in) and tmux on the remote.",
+    });
+
+    new Setting(containerEl)
+      .setName("Remote host")
+      .setDesc("SSH destination: an alias from your ~/.ssh/config or user@host. Must connect without a password prompt.")
+      .addText((text) =>
+        text.setPlaceholder("user@host or ssh alias")
+          .setValue(this.plugin.settings.remoteHost)
+          .onChange(async (value) => {
+            this.plugin.settings.remoteHost = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Remote working directory")
+      .setDesc("Absolute path on the remote where Claude runs — e.g. a synced copy of this vault.")
+      .addText((text) =>
+        text.setPlaceholder("/path/to/vault-on-remote")
+          .setValue(this.plugin.settings.remoteVaultPath)
+          .onChange(async (value) => {
+            this.plugin.settings.remoteVaultPath = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
     new Setting(containerEl)
       .setName("Clear session history")
       .setDesc(`${this.plugin.settings.sessionHistory.length} saved session names`)

@@ -5,33 +5,26 @@ import * as path from "path";
 const SESSIONS_DIR = path.join(process.env.HOME || "", ".claude", "sessions");
 
 interface DetectOptions {
-  /** PID of the shell the terminal spawned (claude runs as its child). */
-  shellPid: number;
-  /** Vault base path, used to match session files by cwd. */
-  vaultPath: string;
+  /** One detection attempt; resolves the session ID or null. */
+  probe: () => Promise<string | null>;
   /** Return true once the session ID is known (stops further attempts). */
   isSettled: () => boolean;
   onDetected: (sessionId: string) => void;
 }
 
 /**
- * Poll for the Claude session ID after launch. Tries PID-based lookup
- * first (child process → ~/.claude/sessions/<pid>.json), then falls back
- * to scanning the sessions dir for files created after launch with a
- * matching cwd. All I/O is async so the UI thread is never blocked.
+ * Poll for the Claude session ID after launch using the supplied probe
+ * (local filesystem lookup or an SSH round-trip for remote sessions).
+ * All I/O is async so the UI thread is never blocked.
  */
 export function watchForClaudeSessionId(options: DetectOptions): void {
-  const launchTime = Date.now();
-
   const attempt = (n: number) => {
     if (n > 5 || options.isSettled()) return;
     setTimeout(() => {
       void (async () => {
         if (options.isSettled()) return;
 
-        const sessionId =
-          (await tryPidBased(options.shellPid)) ??
-          (await tryFallback(options.vaultPath, launchTime));
+        const sessionId = await options.probe();
 
         if (sessionId) {
           options.onDetected(sessionId);
@@ -45,6 +38,16 @@ export function watchForClaudeSessionId(options: DetectOptions): void {
   };
 
   attempt(0);
+}
+
+/**
+ * Local detection: PID-based lookup first (child process →
+ * ~/.claude/sessions/<pid>.json), then a fallback scan of the sessions
+ * dir for files created after launch with a matching cwd.
+ */
+export function makeLocalProbe(shellPid: number, vaultPath: string, launchTime: number): () => Promise<string | null> {
+  return async () =>
+    (await tryPidBased(shellPid)) ?? (await tryFallback(vaultPath, launchTime));
 }
 
 function pgrepChildren(pid: number): Promise<string[]> {

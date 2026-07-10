@@ -1,5 +1,5 @@
-import { Notice, setIcon } from "obsidian";
-import type { ClaudeTerminalSettings, SessionHistoryEntry, TerminalSession } from "./types";
+import { Menu, Notice, setIcon } from "obsidian";
+import type { ClaudeTerminalSettings, RemoteInfo, SessionHistoryEntry, TerminalSession } from "./types";
 
 /**
  * Narrow interface the tab bar uses to talk back to its owner
@@ -10,7 +10,9 @@ export interface TabBarHost {
   onClose(id: string): void;
   onRename(id: string, name: string): void;
   onReorder(fromId: string, toId: string, before: boolean): void;
-  onNewSession(name?: string, resume?: boolean, claudeSessionId?: string): void;
+  /** `remote: true` requests a fresh remote session; a RemoteInfo reattaches an existing one. */
+  onNewSession(name?: string, resume?: boolean, claudeSessionId?: string, remote?: RemoteInfo | boolean): void;
+  onKillRemote(id: string): void;
   onToggleHighlight(): Promise<void>;
   getSessions(): Map<string, TerminalSession>;
   getActiveSessionId(): string | null;
@@ -47,7 +49,7 @@ export class TerminalTabBar {
 
     sessions.forEach((session) => {
       const tab = tabsScroll.createDiv({
-        cls: `claude-terminal-tab ${session.id === activeSessionId ? "is-active" : ""}${session.isRestored ? " is-restored" : ""}`,
+        cls: `claude-terminal-tab ${session.id === activeSessionId ? "is-active" : ""}${session.isRestored ? " is-restored" : ""}${session.remote ? " is-remote" : ""}`,
       });
       tab.draggable = true;
 
@@ -90,6 +92,15 @@ export class TerminalTabBar {
         this.host.onReorder(fromId, session.id, before);
       });
 
+      if (session.remote) {
+        const remoteIcon = tab.createSpan({
+          cls: "claude-terminal-tab-remote-icon",
+          attr: { "aria-label": `Remote: ${session.remote.host}` },
+        });
+        setIcon(remoteIcon, "server");
+        remoteIcon.title = `Remote session on ${session.remote.host} (tmux: ${session.remote.tmuxName})`;
+      }
+
       const nameSpan = tab.createSpan({ cls: "claude-terminal-tab-name", text: session.name });
 
       // Click timer: single click = switch, double click = rename
@@ -121,6 +132,26 @@ export class TerminalTabBar {
         }
       });
 
+      // Remote tabs: right-click menu with detach vs kill
+      if (session.remote) {
+        tab.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          const menu = new Menu();
+          menu.addItem((item) =>
+            item.setTitle("Detach (close tab, keep running)")
+              .setIcon("unplug")
+              .onClick(() => this.host.onClose(session.id))
+          );
+          menu.addItem((item) =>
+            item.setTitle("Kill remote session")
+              .setIcon("trash")
+              .setWarning(true)
+              .onClick(() => this.host.onKillRemote(session.id))
+          );
+          menu.showAtMouseEvent(e);
+        });
+      }
+
       // Close button (only if more than 1 session)
       if (sessions.size > 1) {
         const closeBtn = tab.createSpan({ cls: "claude-terminal-tab-close" });
@@ -149,11 +180,31 @@ export class TerminalTabBar {
       this.render();
     });
 
-    // New tab button
+    // New tab button: click = local, shift+click = remote, right-click = menu
     const newBtn = actionsWrapper.createDiv({ cls: "claude-terminal-tab-action", attr: { "aria-label": "New session" } });
     setIcon(newBtn, "plus");
-    newBtn.title = "New session";
-    newBtn.addEventListener("click", () => this.host.onNewSession());
+    newBtn.title = "New session (shift+click: remote, right-click: choose)";
+    newBtn.addEventListener("click", (e) =>
+      this.host.onNewSession(undefined, false, undefined, e.shiftKey || undefined)
+    );
+    newBtn.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const remoteHost = this.host.getSettings().remoteHost.trim();
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item.setTitle("New local session")
+          .setIcon("terminal")
+          .onClick(() => this.host.onNewSession())
+      );
+      // Shown even when unconfigured: clicking surfaces the settings Notice,
+      // which is how the remote feature gets discovered.
+      menu.addItem((item) =>
+        item.setTitle(`New session on ${remoteHost || "remote (not configured)"}`)
+          .setIcon("server")
+          .onClick(() => this.host.onNewSession(undefined, false, undefined, true))
+      );
+      menu.showAtMouseEvent(e);
+    });
 
     // History button
     if (this.host.getSettings().sessionHistory.length > 0) {
@@ -231,12 +282,21 @@ export class TerminalTabBar {
     dropdown.style.zIndex = "10000";
 
     for (const entry of entries) {
-      const row = dropdown.createDiv({ cls: "claude-terminal-history-item" });
+      const row = dropdown.createDiv({ cls: `claude-terminal-history-item${entry.remote ? " is-remote" : ""}` });
+
+      if (entry.remote) {
+        const remoteIcon = row.createSpan({
+          cls: "claude-terminal-history-remote-icon",
+          attr: { "aria-label": `Remote: ${entry.remote.host}` },
+        });
+        setIcon(remoteIcon, "server");
+        remoteIcon.title = `Remote session on ${entry.remote.host}`;
+      }
 
       const nameEl = row.createSpan({ cls: "claude-terminal-history-name", text: entry.name });
       nameEl.addEventListener("click", () => {
         this.closeHistoryMenu();
-        this.host.onNewSession(entry.name, true, entry.sessionId);
+        this.host.onNewSession(entry.name, true, entry.sessionId, entry.remote);
       });
 
       const delBtn = row.createSpan({ cls: "claude-terminal-history-delete" });

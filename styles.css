@@ -604,6 +604,26 @@
   opacity: 0.8;
 }
 
+/* Remote session indicator (the server icon subsumes the restored dot) */
+
+.claude-terminal-tab.is-remote.is-restored .claude-terminal-tab-name::before {
+  display: none;
+}
+
+.claude-terminal-tab-remote-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+  color: var(--text-accent, var(--interactive-accent));
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+.claude-terminal-tab-remote-icon svg {
+  width: 11px;
+  height: 11px;
+}
+
 /* Sessions container */
 
 .claude-terminal-sessions-container {
@@ -668,6 +688,20 @@
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
+}
+
+.claude-terminal-history-remote-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 2px;
+  color: var(--text-accent, var(--interactive-accent));
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+.claude-terminal-history-remote-icon svg {
+  width: 11px;
+  height: 11px;
 }
 
 .claude-terminal-history-delete {

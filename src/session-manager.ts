@@ -1,14 +1,17 @@
+import { Notice } from "obsidian";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import * as path from "path";
 import type {
   PersistedSession,
+  RemoteInfo,
   TerminalHighlight,
   TerminalSession,
 } from "./types";
 import { HighlightController } from "./highlights";
 import { TerminalTabBar } from "./tab-bar";
-import { watchForClaudeSessionId } from "./claude-session";
+import { makeLocalProbe, watchForClaudeSessionId } from "./claude-session";
+import { buildRemoteLaunchCommand, killRemoteTmuxSession, makeTmuxName, probeRemoteSessionId } from "./remote";
 import { cleanCopyText, normalizeCssColor } from "./text-utils";
 import type ClaudeTerminalPlugin from "./main";
 
@@ -44,8 +47,9 @@ export class TerminalSessionManager {
       onClose: (id) => this.closeSession(id),
       onRename: (id, name) => this.renameSession(id, name),
       onReorder: (fromId, toId, before) => this.reorderSession(fromId, toId, before),
-      onNewSession: (name, resume, claudeSessionId) =>
-        this.createSession(name, resume, false, claudeSessionId),
+      onNewSession: (name, resume, claudeSessionId, remote) =>
+        this.createSession(name, resume, false, claudeSessionId, remote),
+      onKillRemote: (id) => this.killRemoteSession(id),
       onToggleHighlight: async () => {
         this.plugin.settings.highlightingEnabled = !this.plugin.settings.highlightingEnabled;
         await this.plugin.saveSettings();
@@ -70,12 +74,28 @@ export class TerminalSessionManager {
 
   // ---- Session lifecycle ----
 
-  createSession(name?: string, resume = false, isRestored = false, claudeSessionId?: string) {
+  createSession(name?: string, resume = false, isRestored = false, claudeSessionId?: string, remote?: RemoteInfo | boolean) {
+    // `remote === true` is a fresh UI request: snapshot host/path from
+    // settings and mint a tmux name. A RemoteInfo object (restore/history)
+    // is used as-is so the tab reattaches its original tmux session.
+    let remoteInfo: RemoteInfo | null = null;
+    if (remote === true) {
+      const host = this.plugin.settings.remoteHost.trim();
+      const remotePath = this.plugin.settings.remoteVaultPath.trim();
+      if (!host || !remotePath) {
+        new Notice("Configure a remote host and working directory in the Claude Terminal settings first.");
+        return;
+      }
+      remoteInfo = { host, path: remotePath, tmuxName: makeTmuxName() };
+    } else if (remote) {
+      remoteInfo = remote;
+    }
+
     this.sessionCounter++;
     const id = `session-${Date.now()}-${this.sessionCounter}`;
     const sessionName = name || `Session ${this.sessions.size + 1}`;
 
-    this.plugin.addSessionToHistory(sessionName, claudeSessionId || undefined);
+    this.plugin.addSessionToHistory(sessionName, claudeSessionId || undefined, remoteInfo || undefined);
 
     const container = this.sessionsContainer.createDiv({ cls: "claude-terminal-session" });
     const content = container.createDiv({ cls: "claude-terminal-session-content" });
@@ -101,6 +121,7 @@ export class TerminalSessionManager {
       id,
       name: sessionName,
       claudeSessionId: claudeSessionId || null,
+      remote: remoteInfo,
       terminal,
       fitAddon,
       ptyProcess: null,
@@ -233,13 +254,30 @@ export class TerminalSessionManager {
     this.persistSessions();
   }
 
+  /**
+   * Kill the tmux session on the remote host, then close the tab. Fire and
+   * forget: killing tmux drops the ssh client anyway, and destroySession
+   * kills the local pty regardless.
+   */
+  killRemoteSession(id: string) {
+    const session = this.sessions.get(id);
+    if (!session?.remote) return;
+    const remote = session.remote;
+    killRemoteTmuxSession(remote, (err) => {
+      if (err) {
+        new Notice(`Failed to kill remote tmux session ${remote.tmuxName} on ${remote.host} (ssh error). It may still be running.`);
+      }
+    });
+    this.closeSession(id);
+  }
+
   renameSession(id: string, newName: string) {
     const session = this.sessions.get(id);
     if (!session) return;
     const trimmed = newName.trim();
     if (trimmed.length === 0) return;
     session.name = trimmed;
-    this.plugin.addSessionToHistory(trimmed, session.claudeSessionId || undefined);
+    this.plugin.addSessionToHistory(trimmed, session.claudeSessionId || undefined, session.remote || undefined);
     this.renderTabBar();
     this.persistSessions();
   }
@@ -268,7 +306,7 @@ export class TerminalSessionManager {
     if (!this.persist || this.isRestoring) return;
     const list: PersistedSession[] = [];
     this.sessions.forEach(s => {
-      list.push({ name: s.name, claudeSessionId: s.claudeSessionId || undefined });
+      list.push({ name: s.name, claudeSessionId: s.claudeSessionId || undefined, remote: s.remote || undefined });
     });
     this.plugin.settings.persistedSessions = list;
     void this.plugin.saveSettings();
@@ -280,7 +318,7 @@ export class TerminalSessionManager {
     this.isRestoring = true;
     try {
       for (const entry of persisted) {
-        this.createSession(entry.name, true, true, entry.claudeSessionId);
+        this.createSession(entry.name, true, true, entry.claudeSessionId, entry.remote);
       }
     } finally {
       this.isRestoring = false;
@@ -396,7 +434,19 @@ export class TerminalSessionManager {
         session.ptyProcess?.resize(cols, rows);
       });
 
-      if (this.plugin.settings.autoLaunchClaude) {
+      // Remote sessions always launch (a remote tab that doesn't connect
+      // is pointless); local launch stays behind the autoLaunchClaude toggle.
+      if (session.remote) {
+        const cmd = buildRemoteLaunchCommand(session.remote, session.claudeSessionId);
+        setTimeout(() => {
+          session.ptyProcess?.write(cmd + "\r");
+        }, 300);
+        setTimeout(() => {
+          session.terminal?.scrollToBottom();
+        }, 1500);
+
+        this.detectClaudeSessionId(session);
+      } else if (this.plugin.settings.autoLaunchClaude) {
         let cmd: string;
         if (resume && session.claudeSessionId) {
           cmd = `clear && claude --resume ${session.claudeSessionId}`;
@@ -422,10 +472,16 @@ export class TerminalSessionManager {
   }
 
   private detectClaudeSessionId(session: TerminalSession) {
-    const shellPid = session.ptyProcess?.pid;
-    if (!shellPid) return;
-
-    const vaultPath = this.plugin.getVaultPath();
+    const launchTime = Date.now();
+    let probe: () => Promise<string | null>;
+    if (session.remote) {
+      const remote = session.remote;
+      probe = () => probeRemoteSessionId(remote, launchTime);
+    } else {
+      const shellPid = session.ptyProcess?.pid;
+      if (!shellPid) return;
+      probe = makeLocalProbe(shellPid, this.plugin.getVaultPath(), launchTime);
+    }
 
     // For restored/resumed sessions, claudeSessionId holds the OLD id:
     // `claude --resume <id>` forks the conversation into a NEW session id.
@@ -434,8 +490,7 @@ export class TerminalSessionManager {
     const initialId = session.claudeSessionId;
 
     watchForClaudeSessionId({
-      shellPid,
-      vaultPath,
+      probe,
       isSettled: () =>
         session.claudeSessionId !== null && session.claudeSessionId !== initialId,
       onDetected: (sessionId) => {
