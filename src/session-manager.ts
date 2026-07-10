@@ -36,7 +36,6 @@ export class TerminalSessionManager {
   private nodePtyModule: NodePtyModule | null = null;
   private persist: boolean;
   private isRestoring = false;
-  private mouseHintShown = false;
 
   constructor(plugin: ClaudeTerminalPlugin, tabBar: HTMLElement, sessionsContainer: HTMLElement, persist = false) {
     this.plugin = plugin;
@@ -126,6 +125,18 @@ export class TerminalSessionManager {
     terminal.loadAddon(fitAddon);
     terminal.open(content);
 
+    // Invert xterm's mouse-capture bypass: plain drags always select text
+    // (plugin selection color + highlighter), Shift+drag sends the mouse to
+    // apps that capture it (Claude Code's fullscreen TUI). Wheel scrolling is
+    // reported to the app on a separate path and is unaffected. Uses xterm's
+    // private core API — property names survive its minified build (5.5).
+    const selectionService = (terminal as unknown as {
+      _core?: { _selectionService?: { shouldForceSelection(e: MouseEvent): boolean } };
+    })._core?._selectionService;
+    if (selectionService) {
+      selectionService.shouldForceSelection = (e: MouseEvent) => !e.shiftKey;
+    }
+
     const session: TerminalSession = {
       id,
       name: sessionName,
@@ -214,11 +225,6 @@ export class TerminalSessionManager {
           debugLog(this.plugin.getVaultPath(),
             `highlight created id=${last?.id} buffer=${last?.bufferType} ` +
             `overlayEls=${last?.overlayEls.length} decorations=${last?.decorations.length}`);
-        } else if (dragged && terminal.modes.mouseTrackingMode !== "none" && !this.mouseHintShown) {
-          // The drag went to the app (full-screen TUIs capture the mouse), so
-          // xterm never saw a selection. Tell the user about the bypass, once.
-          this.mouseHintShown = true;
-          new Notice("This app captures the mouse — hold Shift while selecting to highlight.");
         }
       }, 100);
     });
