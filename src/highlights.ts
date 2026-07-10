@@ -5,7 +5,7 @@ import type { ClaudeTerminalSettings, TerminalHighlight, TerminalSession } from 
 import { hexToRgba } from "./text-utils";
 
 const HIGHLIGHT_ALPHA = 0.35;
-const FALLBACK_HIGHLIGHT_COLOR = "rgba(250, 200, 50, 0.35)";
+const FALLBACK_HIGHLIGHT_COLOR = "rgba(235, 201, 101, 0.35)";
 
 /**
  * Owns highlight creation, rendering, and the hover popup for terminal sessions.
@@ -28,9 +28,15 @@ export class HighlightController {
     let endLine = selectionPosition.end.y;
     let endCol = selectionPosition.end.x;
 
-    // Find and merge overlapping highlights
+    // Find and merge overlapping highlights. Only highlights from the same
+    // buffer are candidates — coords from the other buffer describe different
+    // content. Alt-buffer highlights whose visuals were cleared (buffer
+    // switch/resize) hold stale coords and are skipped too.
+    const activeBufferType = session.terminal.buffer.active.type;
     const overlapping: TerminalHighlight[] = [];
     for (const h of session.highlights) {
+      if (h.bufferType !== activeBufferType) continue;
+      if (h.bufferType === "alternate" && h.overlayEls.length === 0) continue;
       // Two ranges overlap if one starts before the other ends
       const hBefore = h.endLine < startLine || (h.endLine === startLine && h.endCol < startCol);
       const hAfter = h.startLine > endLine || (h.startLine === endLine && h.startCol > endCol);
@@ -80,11 +86,20 @@ export class HighlightController {
       startCol,
       endLine,
       endCol,
+      bufferType: activeBufferType,
       decorations: [],
       markers: [],
+      overlayEls: [],
     };
 
-    this.render(session, highlight);
+    // xterm decorations don't work on the alternate screen buffer (full-screen
+    // TUIs like Claude Code's fullscreen mode) — render plugin-owned overlay
+    // divs there instead.
+    if (highlight.bufferType === "alternate") {
+      this.renderOverlay(session, highlight);
+    } else {
+      this.render(session, highlight);
+    }
     session.highlights.push(highlight);
     session.terminal.clearSelection();
   }
@@ -114,20 +129,89 @@ export class HighlightController {
     session.activeHighlightId = null;
   }
 
+  /**
+   * Wire per-terminal listeners. Alt-buffer overlays are positional snapshots
+   * of one screen state: on buffer switch or resize the underlying content is
+   * redrawn, so the visuals are removed (the captured text is kept so it still
+   * reaches save-to-vault). Listeners die with terminal.dispose().
+   */
+  attachTerminalListeners(session: TerminalSession) {
+    session.terminal.buffer.onBufferChange(() => this.clearOverlayVisuals(session));
+    session.terminal.onResize(() => this.clearOverlayVisuals(session));
+  }
+
   // ---- Private ----
 
-  /** Release the xterm decorations and markers backing a highlight. */
+  /** Release the visuals backing a highlight (decorations/markers or overlay divs). */
   private disposeHighlight(h: TerminalHighlight) {
     h.decorations.forEach(d => d.dispose());
     h.markers.forEach(m => m.dispose());
+    h.overlayEls.forEach(el => el.remove());
+    h.overlayEls = [];
+  }
+
+  private clearOverlayVisuals(session: TerminalSession) {
+    let removedActive = false;
+    for (const h of session.highlights) {
+      if (h.overlayEls.length === 0) continue;
+      h.overlayEls.forEach(el => el.remove());
+      h.overlayEls = [];
+      if (session.activeHighlightId === h.id) removedActive = true;
+    }
+    if (removedActive) this.hidePopup(session);
+  }
+
+  /** Column span of a highlight on one line (shared by both render paths). */
+  private lineSpan(highlight: TerminalHighlight, line: number, cols: number): { startX: number; width: number } {
+    let startX = 0;
+    let width = cols;
+    if (line === highlight.startLine) {
+      startX = highlight.startCol;
+      width = line === highlight.endLine
+        ? highlight.endCol - highlight.startCol
+        : cols - highlight.startCol;
+    } else if (line === highlight.endLine) {
+      startX = 0;
+      width = highlight.endCol;
+    }
+    return { startX, width };
+  }
+
+  /** The color must stay semi-transparent — it overlays the text. */
+  private highlightBackgroundColor(): string {
+    return hexToRgba(this.getSettings().highlightColor, HIGHLIGHT_ALPHA) ?? FALLBACK_HIGHLIGHT_COLOR;
+  }
+
+  /**
+   * Tag an element as a highlight and wire the hover popup — shared by
+   * decoration.onRender (normal buffer) and overlay divs (alt buffer).
+   */
+  private decorateHighlightElement(
+    session: TerminalSession,
+    highlight: TerminalHighlight,
+    element: HTMLElement,
+    backgroundColor: string,
+  ) {
+    element.dataset.highlightId = highlight.id;
+    element.addClass("claude-terminal-highlight");
+    element.style.backgroundColor = backgroundColor;
+
+    // xterm may reuse or recreate the DOM node on re-render; the flag
+    // lives on the element so listeners are attached exactly once per node.
+    if (element.dataset.hlListenersAdded) return;
+    element.dataset.hlListenersAdded = "1";
+    element.addEventListener("mouseenter", () => {
+      this.cancelHidePopup(session);
+      this.showPopup(session, highlight, element);
+    });
+    element.addEventListener("mouseleave", () => {
+      this.scheduleHidePopup(session);
+    });
   }
 
   private render(session: TerminalSession, highlight: TerminalHighlight) {
     const buffer = session.terminal.buffer.active;
-    // The decoration overlays the text canvas, so the color must stay
-    // semi-transparent or it would hide the text underneath.
-    const backgroundColor =
-      hexToRgba(this.getSettings().highlightColor, HIGHLIGHT_ALPHA) ?? FALLBACK_HIGHLIGHT_COLOR;
+    const backgroundColor = this.highlightBackgroundColor();
 
     for (let line = highlight.startLine; line <= highlight.endLine; line++) {
       const lineOffset = line - (buffer.baseY + buffer.cursorY);
@@ -136,18 +220,7 @@ export class HighlightController {
 
       highlight.markers.push(marker);
 
-      let startX = 0;
-      let width = session.terminal.cols;
-
-      if (line === highlight.startLine) {
-        startX = highlight.startCol;
-        width = line === highlight.endLine
-          ? highlight.endCol - highlight.startCol
-          : session.terminal.cols - highlight.startCol;
-      } else if (line === highlight.endLine) {
-        startX = 0;
-        width = highlight.endCol;
-      }
+      const { startX, width } = this.lineSpan(highlight, line, session.terminal.cols);
 
       const decoration = session.terminal.registerDecoration({
         marker,
@@ -158,25 +231,48 @@ export class HighlightController {
 
       if (decoration) {
         highlight.decorations.push(decoration);
-
         decoration.onRender((element) => {
-          element.dataset.highlightId = highlight.id;
-          element.addClass("claude-terminal-highlight");
-          element.style.backgroundColor = backgroundColor;
-
-          // xterm may reuse or recreate the DOM node on re-render; the flag
-          // lives on the element so listeners are attached exactly once per node.
-          if (element.dataset.hlListenersAdded) return;
-          element.dataset.hlListenersAdded = "1";
-          element.addEventListener("mouseenter", () => {
-            this.cancelHidePopup(session);
-            this.showPopup(session, highlight, element);
-          });
-          element.addEventListener("mouseleave", () => {
-            this.scheduleHidePopup(session);
-          });
+          this.decorateHighlightElement(session, highlight, element, backgroundColor);
         });
       }
+    }
+  }
+
+  /** Plugin-owned layer inside .xterm-screen for alt-buffer overlays; created on demand. */
+  private ensureOverlayLayer(session: TerminalSession): HTMLElement | null {
+    const screen = session.terminal.element?.querySelector<HTMLElement>(".xterm-screen");
+    if (!screen) return null;
+    let layer = screen.querySelector<HTMLElement>(":scope > .claude-terminal-highlight-overlay-layer");
+    if (!layer) layer = screen.createDiv({ cls: "claude-terminal-highlight-overlay-layer" });
+    return layer;
+  }
+
+  /** Cell size from public DOM: xterm sizes .xterm-screen to exactly cols×rows cells. */
+  private getCellDims(session: TerminalSession): { width: number; height: number } | null {
+    const screen = session.terminal.element?.querySelector<HTMLElement>(".xterm-screen");
+    if (!screen || !session.terminal.cols || !session.terminal.rows) return null;
+    const width = screen.clientWidth / session.terminal.cols;
+    const height = screen.clientHeight / session.terminal.rows;
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+
+  private renderOverlay(session: TerminalSession, highlight: TerminalHighlight) {
+    const layer = this.ensureOverlayLayer(session);
+    const dims = this.getCellDims(session);
+    if (!layer || !dims) return;
+    const backgroundColor = this.highlightBackgroundColor();
+
+    // The alt buffer has no scrollback (baseY/viewportY are 0), so absolute
+    // buffer rows map 1:1 to screen rows — no markers needed.
+    for (let line = highlight.startLine; line <= highlight.endLine; line++) {
+      const { startX, width } = this.lineSpan(highlight, line, session.terminal.cols);
+      const el = layer.createDiv();
+      el.style.left = `${startX * dims.width}px`;
+      el.style.top = `${line * dims.height}px`;
+      el.style.width = `${width * dims.width}px`;
+      el.style.height = `${dims.height}px`;
+      this.decorateHighlightElement(session, highlight, el, backgroundColor);
+      highlight.overlayEls.push(el);
     }
   }
 

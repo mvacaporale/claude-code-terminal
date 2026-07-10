@@ -112,9 +112,11 @@ export default class ClaudeTerminalPlugin extends Plugin {
       migrated = true;
     }
 
-    // The old default highlight color (#fef3c7) predates the setting being
-    // wired up and is nearly invisible on light backgrounds — replace it.
-    if (this.settings.highlightColor.toLowerCase() === "#fef3c7") {
+    // Old default highlight colors: #fef3c7 predates the setting being wired
+    // up (nearly invisible on light backgrounds); #fac832 was too saturated.
+    // Move users who never customized the color to the current default.
+    const oldColor = this.settings.highlightColor.toLowerCase();
+    if (oldColor === "#fef3c7" || oldColor === "#fac832") {
       this.settings.highlightColor = DEFAULT_SETTINGS.highlightColor;
       migrated = true;
     }

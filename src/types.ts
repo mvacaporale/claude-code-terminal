@@ -12,8 +12,13 @@ export interface TerminalHighlight {
   startCol: number;
   endLine: number;
   endCol: number;
+  /** Which buffer the coords refer to; alt-buffer coords are meaningless after a buffer switch. */
+  bufferType: "normal" | "alternate";
+  /** Normal-buffer rendering (xterm decorations). */
   decorations: IDecoration[];
   markers: IMarker[];
+  /** Alt-buffer rendering (plugin-owned overlay divs). */
+  overlayEls: HTMLElement[];
 }
 
 /**
@@ -82,7 +87,7 @@ export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   fontSize: 13,
   floatingWidth: 500,
   floatingHeight: 350,
-  highlightColor: "#fac832",
+  highlightColor: "#ebc965",
   highlightSavePath: "3. Resources/Highlights",
   centeredView: false,
   sessionHistory: [],

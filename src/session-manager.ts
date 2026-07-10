@@ -181,6 +181,7 @@ export class TerminalSessionManager {
     });
 
     this.sessions.set(id, session);
+    this.highlighter.attachTerminalListeners(session);
 
     // Set active state directly (avoid switchToSession's extra rAF + renderTabBar)
     this.sessions.forEach(s => { s.container.style.display = "none"; });
@@ -395,8 +396,16 @@ export class TerminalSessionManager {
       background: cssVar("--background-primary") ?? (isDark ? "#1e1e1e" : "#ffffff"),
       foreground: cssVar("--text-normal") ?? (isDark ? "#d4d4d4" : "#1f1f1f"),
       cursor: cssVar("--text-accent") ?? "#528bff",
-      selectionBackground: cssVar("--text-selection")
-        ?? (isDark ? "rgba(70, 118, 180, 0.45)" : "rgba(140, 180, 255, 0.4)"),
+      // xterm's DOM renderer paints the selection as an OPAQUE blend of this
+      // color onto theme.background (allowTransparency doesn't apply to the
+      // selection layer), so the values are tuned for the blend result:
+      // Obsidian's --text-selection blends to an unreadable navy — don't use it.
+      selectionBackground: isDark
+        ? "rgba(90, 140, 210, 0.35)" // over #1e1e1e → ~#334560 muted slate
+        : "rgba(85, 150, 240, 0.3)", // over #ffffff → ~#cce0fb pastel blue
+      selectionInactiveBackground: isDark
+        ? "rgba(90, 140, 210, 0.22)"
+        : "rgba(85, 150, 240, 0.18)",
     };
   }
 

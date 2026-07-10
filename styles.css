@@ -332,6 +332,19 @@
   pointer-events: auto !important;
 }
 
+/* Plugin-owned overlay layer for highlights on the alternate screen buffer
+   (full-screen TUIs), where xterm decorations are unavailable. */
+.claude-terminal-highlight-overlay-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 7; /* matches .xterm-decoration-top-layer */
+  pointer-events: none;
+}
+
+.claude-terminal-highlight-overlay-layer .claude-terminal-highlight {
+  position: absolute;
+}
+
 .claude-terminal-highlight-popup {
   display: inline-flex;
   align-items: center;
