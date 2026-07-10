@@ -111,8 +111,11 @@ export class TerminalSessionManager {
       allowTransparency: true,
       allowProposedApi: true,
       // Full-screen TUIs (Claude Code fullscreen mode) capture the mouse, so
-      // plain drags never create an xterm selection. This lets ⌥+drag bypass
-      // the app and select/highlight through xterm, macOS-terminal style.
+      // plain drags never create an xterm selection. Shift+drag bypasses the
+      // app: xterm's Browser.isMac is false under Electron (a node `process`
+      // exists in the renderer), so it always uses its non-Mac shiftKey
+      // override. This flag only matters if that detection is ever fixed —
+      // then ⌥+drag works too.
       macOptionClickForcesSelection: true,
       scrollback: 10000,
       cols: 80,
@@ -204,7 +207,7 @@ export class TerminalSessionManager {
           // The drag went to the app (full-screen TUIs capture the mouse), so
           // xterm never saw a selection. Tell the user about the bypass, once.
           this.mouseHintShown = true;
-          new Notice("This app captures the mouse — hold ⌥ (Option) while selecting to highlight.");
+          new Notice("This app captures the mouse — hold Shift while selecting to highlight.");
         }
       }, 100);
     });
