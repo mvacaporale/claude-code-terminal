@@ -35,6 +35,7 @@ export class TerminalSessionManager {
   private nodePtyModule: NodePtyModule | null = null;
   private persist: boolean;
   private isRestoring = false;
+  private mouseHintShown = false;
 
   constructor(plugin: ClaudeTerminalPlugin, tabBar: HTMLElement, sessionsContainer: HTMLElement, persist = false) {
     this.plugin = plugin;
@@ -108,6 +109,10 @@ export class TerminalSessionManager {
       cursorStyle: "bar",
       allowTransparency: true,
       allowProposedApi: true,
+      // Full-screen TUIs (Claude Code fullscreen mode) capture the mouse, so
+      // plain drags never create an xterm selection. This lets ⌥+drag bypass
+      // the app and select/highlight through xterm, macOS-terminal style.
+      macOptionClickForcesSelection: true,
       scrollback: 10000,
       cols: 80,
       rows: 24,
@@ -170,12 +175,24 @@ export class TerminalSessionManager {
     });
 
     // Auto-highlight on selection (gated by setting)
-    terminal.element?.addEventListener("mouseup", () => {
+    let dragStart: { x: number; y: number } | null = null;
+    terminal.element?.addEventListener("mousedown", (e) => {
+      dragStart = { x: e.clientX, y: e.clientY };
+    });
+    terminal.element?.addEventListener("mouseup", (e) => {
       if (!this.plugin.settings.highlightingEnabled) return;
+      const dragged = dragStart
+        && Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 10;
+      dragStart = null;
       setTimeout(() => {
         const selection = terminal.getSelection();
         if (selection && selection.trim().length > 0) {
           this.highlighter.createFromSelection(session);
+        } else if (dragged && terminal.modes.mouseTrackingMode !== "none" && !this.mouseHintShown) {
+          // The drag went to the app (full-screen TUIs capture the mouse), so
+          // xterm never saw a selection. Tell the user about the bypass, once.
+          this.mouseHintShown = true;
+          new Notice("This app captures the mouse — hold ⌥ (Option) while selecting to highlight.");
         }
       }, 100);
     });
