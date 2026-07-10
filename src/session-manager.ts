@@ -179,20 +179,31 @@ export class TerminalSessionManager {
     });
 
     // Auto-highlight on selection (gated by setting)
-    let dragStart: { x: number; y: number; alt: boolean } | null = null;
+    let dragStart: { x: number; y: number; alt: boolean; shift: boolean } | null = null;
+    terminal.onSelectionChange(() => {
+      debugLog(this.plugin.getVaultPath(),
+        `selectionChange session=${session.name} selLen=${terminal.getSelection().length} ` +
+        `buffer=${terminal.buffer.active.type}`);
+    });
     terminal.element?.addEventListener("mousedown", (e) => {
-      dragStart = { x: e.clientX, y: e.clientY, alt: e.altKey };
+      dragStart = { x: e.clientX, y: e.clientY, alt: e.altKey, shift: e.shiftKey };
+      debugLog(this.plugin.getVaultPath(),
+        `mousedown session=${session.name} shift=${e.shiftKey} alt=${e.altKey} ` +
+        `button=${e.button} detail=${e.detail} mouseTracking=${terminal.modes.mouseTrackingMode} ` +
+        `target=${(e.target as HTMLElement)?.className ?? "?"}`);
     });
     terminal.element?.addEventListener("mouseup", (e) => {
       const dragged = dragStart
         && Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 10;
       const altHeld = dragStart?.alt ?? false;
+      const shiftAtDown = dragStart?.shift ?? false;
       dragStart = null;
       setTimeout(() => {
         const selection = terminal.getSelection();
         debugLog(this.plugin.getVaultPath(),
           `mouseup session=${session.name} hlEnabled=${this.plugin.settings.highlightingEnabled} ` +
-          `dragged=${!!dragged} alt=${altHeld} mouseTracking=${terminal.modes.mouseTrackingMode} ` +
+          `dragged=${!!dragged} alt=${altHeld} shiftAtDown=${shiftAtDown} shiftAtUp=${e.shiftKey} ` +
+          `mouseTracking=${terminal.modes.mouseTrackingMode} ` +
           `buffer=${terminal.buffer.active.type} selLen=${selection.length} ` +
           `selPos=${JSON.stringify(terminal.getSelectionPosition() ?? null)} ` +
           `selBg=${terminal.options.theme?.selectionBackground}`);
