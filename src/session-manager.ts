@@ -137,6 +137,22 @@ export class TerminalSessionManager {
       selectionService.shouldForceSelection = (e: MouseEvent) => !e.shiftKey;
     }
 
+    // xterm clears the selection on any user input, and mouse reports count
+    // as input — with any-event tracking (Claude Code) every mouse move is a
+    // report, so a selection died on the first move after mouseup. Re-send
+    // mouse reports (SGR: ESC [< b;x;y M|m) without the user-input flag so
+    // only keyboard input clears the selection.
+    const coreService = (terminal as unknown as {
+      _core?: { coreService?: { triggerDataEvent(data: string, wasUserInput?: boolean): void } };
+    })._core?.coreService;
+    if (coreService) {
+      const origTrigger = coreService.triggerDataEvent.bind(coreService);
+      coreService.triggerDataEvent = (data: string, wasUserInput?: boolean) => {
+        const isMouseReport = /^\x1b\[<\d+;\d+;\d+[Mm]$/.test(data);
+        origTrigger(data, isMouseReport ? false : wasUserInput);
+      };
+    }
+
     const session: TerminalSession = {
       id,
       name: sessionName,
@@ -218,8 +234,14 @@ export class TerminalSessionManager {
           `buffer=${terminal.buffer.active.type} selLen=${selection.length} ` +
           `selPos=${JSON.stringify(terminal.getSelectionPosition() ?? null)} ` +
           `selBg=${terminal.options.theme?.selectionBackground}`);
-        if (!this.plugin.settings.highlightingEnabled) return;
-        if (selection && selection.trim().length > 0) {
+        if (!selection || selection.trim().length === 0) return;
+        // Copy-on-select, matching the auto-copy Claude Code's own TUI
+        // selection did before plain drags stayed in xterm.
+        const stripped = selection.replace(/^▎ ?/gm, "");
+        void navigator.clipboard.writeText(
+          this.plugin.settings.cleanCopy ? cleanCopyText(stripped) : stripped
+        );
+        if (this.plugin.settings.highlightingEnabled) {
           this.highlighter.createFromSelection(session);
           const last = session.highlights[session.highlights.length - 1];
           debugLog(this.plugin.getVaultPath(),
