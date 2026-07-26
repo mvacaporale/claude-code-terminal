@@ -448,7 +448,7 @@ export async function saveHighlightsToVault(
 
   let content = `---
 type: highlights
-tags: claude-code, terminal
+tags: [claude-code, terminal]
 last_edited: ${dateStr}
 summary: Highlights from Claude Code terminal session
 ---

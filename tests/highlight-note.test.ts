@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildSessionBody, upsertSessionSection } from "../src/highlight-note-format";
+import { buildSessionBody, initialNoteContent, upsertSessionSection } from "../src/highlight-note-format";
+
+describe("initialNoteContent", () => {
+  it("writes tags as a YAML list (Obsidian rejects comma-joined strings)", () => {
+    expect(initialNoteContent("2026-07-26")).toContain("tags: [claude-code, terminal]");
+  });
+});
 
 describe("buildSessionBody", () => {
   it("renders one bullet per highlight, oldest first", () => {
