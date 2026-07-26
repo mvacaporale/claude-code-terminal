@@ -42,7 +42,10 @@ export class TerminalSessionManager {
     this.tabBar = tabBar;
     this.sessionsContainer = sessionsContainer;
     this.persist = persist;
-    this.highlighter = new HighlightController(() => this.plugin.settings);
+    this.highlighter = new HighlightController(
+      () => this.plugin.settings,
+      (created) => this.plugin.notifyHighlightsChanged(created),
+    );
     this.tabBarUi = new TerminalTabBar(tabBar, {
       onSwitch: (id) => this.switchToSession(id),
       onClose: (id) => this.closeSession(id),
@@ -54,6 +57,9 @@ export class TerminalSessionManager {
       onToggleHighlight: async () => {
         this.plugin.settings.highlightingEnabled = !this.plugin.settings.highlightingEnabled;
         await this.plugin.saveSettings();
+        if (this.plugin.settings.highlightingEnabled) {
+          this.plugin.highlightNoteSync.startNewSession();
+        }
       },
       getSessions: () => this.sessions,
       getActiveSessionId: () => this.activeSessionId,
@@ -168,6 +174,7 @@ export class TerminalSessionManager {
       hidePopupTimeout: null,
       resizeObserver: null,
       fitDebounceTimer: null,
+      reanchorTimer: null,
       isRestored,
     };
 
@@ -298,6 +305,8 @@ export class TerminalSessionManager {
         session.fitAddon.fit();
         session.terminal.scrollToBottom();
         session.terminal.focus();
+        // Re-anchor pass deferred while the tab was hidden (zero cell dims)
+        this.highlighter.refreshOverlays(session);
       });
     });
 
@@ -451,6 +460,7 @@ export class TerminalSessionManager {
   private destroySession(session: TerminalSession) {
     session.resizeObserver?.disconnect();
     if (session.fitDebounceTimer) clearTimeout(session.fitDebounceTimer);
+    if (session.reanchorTimer) clearTimeout(session.reanchorTimer);
     if (session.ptyProcess) {
       session.ptyProcess.kill();
     }

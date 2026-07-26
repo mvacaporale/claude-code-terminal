@@ -3,16 +3,22 @@ import * as path from "path";
 import * as fs from "fs";
 import type { ClaudeTerminalSettings, TerminalHighlight, TerminalSession } from "./types";
 import { hexToRgba } from "./text-utils";
+import { findAnchorRow } from "./anchor";
 
 const HIGHLIGHT_ALPHA = 0.35;
 const FALLBACK_HIGHLIGHT_COLOR = "rgba(235, 201, 101, 0.35)";
+const REANCHOR_DEBOUNCE_MS = 80;
 
 /**
  * Owns highlight creation, rendering, and the hover popup for terminal sessions.
  * Highlight state itself lives on each TerminalSession.
  */
 export class HighlightController {
-  constructor(private getSettings: () => ClaudeTerminalSettings) {}
+  constructor(
+    private getSettings: () => ClaudeTerminalSettings,
+    /** Fired after any highlight mutation; `created` is true for additions/merges. */
+    private onChange: (created: boolean) => void = () => {},
+  ) {}
 
   createFromSelection(session: TerminalSession) {
     const selection = session.terminal.getSelection();
@@ -63,10 +69,12 @@ export class HighlightController {
     // Rebuild the full text from the terminal buffer
     const buffer = session.terminal.buffer.active;
     const lines: string[] = [];
+    const fullLines: string[] = [];
     for (let line = startLine; line <= endLine; line++) {
       const bufferLine = buffer.getLine(line);
-      if (!bufferLine) { lines.push(""); continue; }
+      if (!bufferLine) { lines.push(""); fullLines.push(""); continue; }
       const fullText = bufferLine.translateToString(true);
+      fullLines.push(fullText);
       if (line === startLine && line === endLine) {
         lines.push(fullText.substring(startCol, endCol));
       } else if (line === startLine) {
@@ -90,6 +98,7 @@ export class HighlightController {
       decorations: [],
       markers: [],
       overlayEls: [],
+      anchorLines: activeBufferType === "alternate" ? fullLines : [],
     };
 
     // xterm decorations don't work on the alternate screen buffer (full-screen
@@ -102,6 +111,7 @@ export class HighlightController {
     }
     session.highlights.push(highlight);
     session.terminal.clearSelection();
+    this.onChange(true);
   }
 
   remove(session: TerminalSession, id: string) {
@@ -112,12 +122,15 @@ export class HighlightController {
     this.disposeHighlight(highlight);
     session.highlights.splice(index, 1);
     this.hidePopup(session);
+    this.onChange(false);
   }
 
   clearAll(session: TerminalSession) {
+    const hadHighlights = session.highlights.length > 0;
     session.highlights.forEach(h => this.disposeHighlight(h));
     session.highlights = [];
     this.hidePopup(session);
+    if (hadHighlights) this.onChange(false);
   }
 
   hidePopup(session: TerminalSession) {
@@ -130,14 +143,27 @@ export class HighlightController {
   }
 
   /**
-   * Wire per-terminal listeners. Alt-buffer overlays are positional snapshots
-   * of one screen state: on buffer switch or resize the underlying content is
-   * redrawn, so the visuals are removed (the captured text is kept so it still
-   * reaches save-to-vault). Listeners die with terminal.dispose().
+   * Wire per-terminal listeners. On buffer switch or resize the underlying
+   * content is redrawn, so alt-buffer overlay visuals are removed; each write
+   * burst then re-anchors every alt highlight to wherever its text now sits
+   * (reviving hidden ones), so highlights follow TUI scrolling and survive
+   * round-trips out of the alt buffer. Listeners die with terminal.dispose().
    */
   attachTerminalListeners(session: TerminalSession) {
     session.terminal.buffer.onBufferChange(() => this.clearOverlayVisuals(session));
     session.terminal.onResize(() => this.clearOverlayVisuals(session));
+    session.terminal.onWriteParsed(() => {
+      if (session.reanchorTimer) clearTimeout(session.reanchorTimer);
+      session.reanchorTimer = setTimeout(() => {
+        session.reanchorTimer = null;
+        this.reanchorAltHighlights(session);
+      }, REANCHOR_DEBOUNCE_MS);
+    });
+  }
+
+  /** Re-anchor immediately (e.g. after a hidden session becomes visible again). */
+  refreshOverlays(session: TerminalSession) {
+    this.reanchorAltHighlights(session);
   }
 
   // ---- Private ----
@@ -159,6 +185,56 @@ export class HighlightController {
       if (session.activeHighlightId === h.id) removedActive = true;
     }
     if (removedActive) this.hidePopup(session);
+  }
+
+  /**
+   * Alt-buffer TUIs scroll by repainting, so overlays pinned to screen rows
+   * drift off their text. After each write burst, re-find every alt
+   * highlight's anchor lines in the buffer: move its overlays to the new row,
+   * hide them while the text is off screen, and revive them when it returns.
+   */
+  private reanchorAltHighlights(session: TerminalSession) {
+    const terminal = session.terminal;
+    if (terminal.buffer.active.type !== "alternate") return;
+    const alts = session.highlights.filter(
+      h => h.bufferType === "alternate" && h.anchorLines.length > 0,
+    );
+    if (alts.length === 0) return;
+
+    // Hidden container (inactive tab) → zero cell dims; defer to the next
+    // pass rather than positioning overlays with garbage geometry.
+    const dims = this.getCellDims(session);
+    if (!dims) return;
+
+    const buffer = terminal.buffer.active;
+    const bufferLines: string[] = [];
+    for (let row = 0; row < terminal.rows; row++) {
+      bufferLines.push(buffer.getLine(row)?.translateToString(true) ?? "");
+    }
+
+    let hidActive = false;
+    for (const h of alts) {
+      const newStart = findAnchorRow(bufferLines, h.anchorLines, h.startLine);
+      if (newStart === null) {
+        if (h.overlayEls.length > 0) {
+          h.overlayEls.forEach(el => el.remove());
+          h.overlayEls = [];
+          if (session.activeHighlightId === h.id) hidActive = true;
+        }
+        continue;
+      }
+      const delta = newStart - h.startLine;
+      h.startLine += delta;
+      h.endLine += delta;
+      if (h.overlayEls.length === 0) {
+        this.renderOverlay(session, h);
+      } else if (delta !== 0) {
+        h.overlayEls.forEach((el, i) => {
+          el.style.top = `${(h.startLine + i) * dims.height}px`;
+        });
+      }
+    }
+    if (hidActive) this.hidePopup(session);
   }
 
   /** Column span of a highlight on one line (shared by both render paths). */

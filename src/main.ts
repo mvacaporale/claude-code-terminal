@@ -12,10 +12,12 @@ import { ClaudeTerminalView } from "./terminal-view";
 import { FloatingWindow } from "./floating-window";
 import { ClaudeTerminalSettingTab } from "./settings-tab";
 import { saveHighlightsToVault } from "./highlights";
+import { HighlightNoteSync } from "./highlight-note";
 import { debugLog } from "./debug";
 
 export default class ClaudeTerminalPlugin extends Plugin {
   settings: ClaudeTerminalSettings = DEFAULT_SETTINGS;
+  highlightNoteSync: HighlightNoteSync = new HighlightNoteSync(this);
   private floating: FloatingWindow = new FloatingWindow(this);
 
   async onload() {
@@ -239,10 +241,20 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
   // ---- Highlights ----
 
-  async saveHighlights() {
+  /** Every live highlight across the floating window and all docked views. */
+  collectAllHighlights(): TerminalHighlight[] {
     const allHighlights: TerminalHighlight[] = [...this.floating.getAllHighlights()];
     this.forEachView(view => allHighlights.push(...view.getAllHighlights()));
-    await saveHighlightsToVault(this.getVaultPath(), this.settings, allHighlights);
+    return allHighlights;
+  }
+
+  /** Called by highlight controllers after any create/merge/delete/clear. */
+  notifyHighlightsChanged(created: boolean) {
+    this.highlightNoteSync.onHighlightsChanged(created);
+  }
+
+  async saveHighlights() {
+    await saveHighlightsToVault(this.getVaultPath(), this.settings, this.collectAllHighlights());
   }
 
   private clearAllHighlights() {

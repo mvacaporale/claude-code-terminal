@@ -19,6 +19,12 @@ export interface TerminalHighlight {
   markers: IMarker[];
   /** Alt-buffer rendering (plugin-owned overlay divs). */
   overlayEls: HTMLElement[];
+  /**
+   * Full text of each buffer line the highlight spanned at creation
+   * (alt buffer only; empty otherwise). Used to re-find the highlighted
+   * text after the TUI redraws — alt-buffer TUIs scroll by repainting.
+   */
+  anchorLines: string[];
 }
 
 /**
@@ -48,6 +54,7 @@ export interface TerminalSession {
   hidePopupTimeout: NodeJS.Timeout | null;
   resizeObserver: ResizeObserver | null;
   fitDebounceTimer: NodeJS.Timeout | null;
+  reanchorTimer: NodeJS.Timeout | null;
   isRestored: boolean;
 }
 
