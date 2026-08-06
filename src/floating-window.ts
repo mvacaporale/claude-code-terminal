@@ -1,6 +1,7 @@
 import { setIcon } from "obsidian";
 import { TerminalSessionManager } from "./session-manager";
 import type { TerminalHighlight } from "./types";
+import type { ThreadRef } from "./claude-threads";
 import type ClaudeTerminalPlugin from "./main";
 
 /**
@@ -136,6 +137,14 @@ export class FloatingWindow {
 
   getAllHighlights(): TerminalHighlight[] {
     return this.sessionManager?.getAllHighlights() ?? [];
+  }
+
+  snapshotThreadRefs(): ThreadRef[] {
+    return this.sessionManager?.snapshotThreadRefs() ?? [];
+  }
+
+  reopenThread(ref: ThreadRef) {
+    this.sessionManager?.reopenThread(ref);
   }
 
   clearAllHighlights() {
