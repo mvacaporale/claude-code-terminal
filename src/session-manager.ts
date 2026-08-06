@@ -81,7 +81,7 @@ export class TerminalSessionManager {
 
   // ---- Session lifecycle ----
 
-  createSession(name?: string, resume = false, isRestored = false, claudeSessionId?: string, remote?: RemoteInfo | boolean) {
+  createSession(name?: string, resume = false, isRestored = false, claudeSessionId?: string, remote?: RemoteInfo | boolean, initialInput?: string) {
     // `remote === true` is a fresh UI request: snapshot host/path from
     // settings and mint a tmux name. A RemoteInfo object (restore/history)
     // is used as-is so the tab reattaches its original tmux session.
@@ -269,7 +269,7 @@ export class TerminalSessionManager {
     // Single rAF: fit, start PTY, focus, render tabs
     requestAnimationFrame(() => {
       fitAddon.fit();
-      this.startPty(session, resume);
+      this.startPty(session, resume, initialInput);
       terminal.focus();
       this.renderTabBar();
     });
@@ -490,7 +490,7 @@ export class TerminalSessionManager {
     };
   }
 
-  private startPty(session: TerminalSession, resume = false) {
+  private startPty(session: TerminalSession, resume = false, initialInput?: string) {
     if (!session.terminal) return;
 
     try {
@@ -536,9 +536,12 @@ export class TerminalSessionManager {
         }, 1500);
 
         this.detectClaudeSessionId(session);
-      } else if (this.plugin.settings.autoLaunchClaude) {
+      } else if (this.plugin.settings.autoLaunchClaude || initialInput) {
         let cmd: string;
-        if (resume && session.claudeSessionId) {
+        if (initialInput) {
+          // A review session always wants a fresh conversation to drop the prompt into.
+          cmd = "clear && claude";
+        } else if (resume && session.claudeSessionId) {
           cmd = `clear && claude --resume ${session.claudeSessionId}`;
         } else if (resume || this.sessionCounter === 1) {
           cmd = "clear && claude --continue";
@@ -551,6 +554,15 @@ export class TerminalSessionManager {
         setTimeout(() => {
           session.terminal?.scrollToBottom();
         }, 1500);
+
+        // Auto-submit the review prompt once Claude's TUI has had time to come up.
+        // The delay is a heuristic; the console also copies the prompt to the
+        // clipboard so ⌘V is a reliable fallback if the timing is ever off.
+        if (initialInput) {
+          setTimeout(() => {
+            session.ptyProcess?.write(initialInput + "\r");
+          }, 2500);
+        }
 
         this.detectClaudeSessionId(session);
       }

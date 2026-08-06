@@ -4,6 +4,11 @@ import type { IPty } from "node-pty";
 
 export const VIEW_TYPE_CLAUDE_TERMINAL = "claude-terminal-view";
 
+export const VIEW_TYPE_REVIEW_CONSOLE = "review-console-view";
+
+/** Vault folder where miciato automations drop job-run notification notes. */
+export const REVIEW_FOLDER = "_System/Job Runs/";
+
 export interface TerminalHighlight {
   id: string;
   text: string;

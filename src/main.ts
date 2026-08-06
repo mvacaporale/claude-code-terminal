@@ -7,8 +7,10 @@ import {
   RemoteInfo,
   TerminalHighlight,
   VIEW_TYPE_CLAUDE_TERMINAL,
+  VIEW_TYPE_REVIEW_CONSOLE,
 } from "./types";
 import { ClaudeTerminalView } from "./terminal-view";
+import { ReviewConsoleView } from "./review-console-view";
 import { FloatingWindow } from "./floating-window";
 import { ClaudeTerminalSettingTab } from "./settings-tab";
 import { saveHighlightsToVault } from "./highlights";
@@ -19,6 +21,8 @@ export default class ClaudeTerminalPlugin extends Plugin {
   settings: ClaudeTerminalSettings = DEFAULT_SETTINGS;
   highlightNoteSync: HighlightNoteSync = new HighlightNoteSync(this);
   private floating: FloatingWindow = new FloatingWindow(this);
+  /** One-shot review prompt handed to the next terminal view's first session. */
+  private reviewSeed: string | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -26,9 +30,20 @@ export default class ClaudeTerminalPlugin extends Plugin {
     new Notice("Claude Terminal: debug build hl-diag-5 loaded");
 
     this.registerView(VIEW_TYPE_CLAUDE_TERMINAL, (leaf) => new ClaudeTerminalView(leaf, this));
+    this.registerView(VIEW_TYPE_REVIEW_CONSOLE, (leaf) => new ReviewConsoleView(leaf, this));
 
     this.addRibbonIcon("terminal", "Toggle claude terminal", () => {
       this.floating.toggle();
+    });
+
+    this.addRibbonIcon("list-checks", "Open Review Console", () => {
+      void this.openReviewConsole();
+    });
+
+    this.addCommand({
+      id: "open-review-console",
+      name: "Open Review Console",
+      callback: () => { void this.openReviewConsole(); },
     });
 
     this.addCommand({
@@ -237,6 +252,49 @@ export default class ClaudeTerminalPlugin extends Plugin {
   undockToFloating() {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_CLAUDE_TERMINAL);
     this.floating.show();
+  }
+
+  // ---- Review Console ----
+
+  /** Open (or reveal) the Review Console in the right sidebar. */
+  async openReviewConsole() {
+    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW_CONSOLE);
+    if (existing.length > 0) {
+      await this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: VIEW_TYPE_REVIEW_CONSOLE, active: true });
+      await this.app.workspace.revealLeaf(leaf);
+    }
+  }
+
+  /** Consume the one-shot review prompt (terminal view calls this on open). */
+  consumeReviewSeed(): string | null {
+    const seed = this.reviewSeed;
+    this.reviewSeed = null;
+    return seed;
+  }
+
+  /**
+   * Open a fresh Claude terminal session for a review and auto-submit `reviewInput`.
+   * Deliberately does NOT use openInCenter/openInSidebar — those detachLeavesOfType()
+   * first, which would kill any running terminal sessions. If a terminal is already
+   * open we add a review session to it; otherwise we stash a one-shot seed so the new
+   * view opens straight into a single fresh review session (no restore, no empty tab).
+   */
+  async openTerminalForReview(reviewInput: string) {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_TERMINAL);
+    if (leaves.length > 0) {
+      await this.app.workspace.revealLeaf(leaves[0]);
+      (leaves[0].view as ClaudeTerminalView).createSession(undefined, reviewInput);
+      return;
+    }
+    this.reviewSeed = reviewInput;
+    const leaf = this.app.workspace.getLeaf("tab");
+    await leaf.setViewState({ type: VIEW_TYPE_CLAUDE_TERMINAL, active: true });
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   // ---- Highlights ----

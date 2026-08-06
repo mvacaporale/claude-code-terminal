@@ -41,6 +41,13 @@ export class ClaudeTerminalView extends ItemView {
     this.initTimer = setTimeout(() => {
       this.initTimer = null;
       this.manager = new TerminalSessionManager(this.plugin, tabBar, sessionsContainer, true);
+      // A review launch stashes a one-shot prompt: open straight into a single fresh
+      // review session (skip restore/auto-create) rather than restoring old tabs.
+      const seed = this.plugin.consumeReviewSeed();
+      if (seed) {
+        this.manager.createSession(undefined, false, false, undefined, undefined, seed);
+        return;
+      }
       const restored = this.plugin.settings.restoreSessionsOnStartup
         ? this.manager.restoreSessions()
         : false;
@@ -106,8 +113,8 @@ export class ClaudeTerminalView extends ItemView {
 
   // Public API for plugin
 
-  createSession(name?: string) {
-    this.manager?.createSession(name);
+  createSession(name?: string, initialInput?: string) {
+    this.manager?.createSession(name, false, false, undefined, undefined, initialInput);
   }
 
   refreshTheme() {
