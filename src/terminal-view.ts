@@ -1,6 +1,7 @@
 import { ItemView, Menu, Notice, WorkspaceLeaf } from "obsidian";
 import { TerminalSessionManager } from "./session-manager";
 import { VIEW_TYPE_CLAUDE_TERMINAL, TerminalHighlight } from "./types";
+import type { ThreadRef } from "./claude-threads";
 import type ClaudeTerminalPlugin from "./main";
 
 /** Docked terminal view (sidebar or main editor area). */
@@ -123,6 +124,14 @@ export class ClaudeTerminalView extends ItemView {
 
   getAllHighlights(): TerminalHighlight[] {
     return this.manager?.getAllHighlights() ?? [];
+  }
+
+  snapshotThreadRefs(): ThreadRef[] {
+    return this.manager?.snapshotThreadRefs() ?? [];
+  }
+
+  reopenThread(ref: ThreadRef) {
+    this.manager?.reopenThread(ref);
   }
 
   clearAllHighlights() {

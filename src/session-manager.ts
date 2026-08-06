@@ -11,6 +11,7 @@ import type {
 import { HighlightController } from "./highlights";
 import { TerminalTabBar } from "./tab-bar";
 import { makeLocalProbe, watchForClaudeSessionId } from "./claude-session";
+import type { ThreadRef } from "./claude-threads";
 import { debugLog } from "./debug";
 import { buildRemoteLaunchCommand, killRemoteTmuxSession, makeTmuxName, probeRemoteSessionId } from "./remote";
 import { cleanCopyText, normalizeCssColor } from "./text-utils";
@@ -393,6 +394,29 @@ export class TerminalSessionManager {
     void this.plugin.saveSettings();
   }
 
+  /**
+   * Snapshot the currently open tabs as thread refs (for saving to a note).
+   * Local sessions run at the vault root; remote sessions carry their own path.
+   */
+  snapshotThreadRefs(): ThreadRef[] {
+    const vaultPath = this.plugin.getVaultPath();
+    const refs: ThreadRef[] = [];
+    this.sessions.forEach(s => {
+      refs.push({
+        name: s.name,
+        session: s.claudeSessionId,
+        cwd: s.remote ? s.remote.path : vaultPath,
+        remote: s.remote,
+      });
+    });
+    return refs;
+  }
+
+  /** Open a saved thread as a new tab, resuming its Claude session. */
+  reopenThread(ref: ThreadRef) {
+    this.createSession(ref.name, true, false, ref.session ?? undefined, ref.remote ?? undefined);
+  }
+
   restoreSessions(): boolean {
     const persisted = this.plugin.settings.persistedSessions;
     if (!persisted || persisted.length === 0) return false;
@@ -458,6 +482,11 @@ export class TerminalSessionManager {
   // ---- Private helpers ----
 
   private destroySession(session: TerminalSession) {
+    // Keep a saved thread's vault archive fresh with any conversation since the
+    // last save (no-op unless this session was previously saved to a note).
+    if (session.claudeSessionId && !session.remote) {
+      this.plugin.refreshArchiveIfTracked(session.claudeSessionId, this.plugin.getVaultPath());
+    }
     session.resizeObserver?.disconnect();
     if (session.fitDebounceTimer) clearTimeout(session.fitDebounceTimer);
     if (session.reanchorTimer) clearTimeout(session.reanchorTimer);

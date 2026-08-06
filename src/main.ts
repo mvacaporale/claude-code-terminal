@@ -1,6 +1,7 @@
 import { FileSystemAdapter, Notice, Plugin } from "obsidian";
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
 import {
   ClaudeTerminalSettings,
   DEFAULT_SETTINGS,
@@ -14,6 +15,10 @@ import { ClaudeTerminalSettingTab } from "./settings-tab";
 import { saveHighlightsToVault } from "./highlights";
 import { HighlightNoteSync } from "./highlight-note";
 import { debugLog } from "./debug";
+import { ThreadRef, transcriptPath } from "./claude-threads";
+import { handleSaveThreads } from "./thread-save";
+import { archiveTranscript, rehydrateIfMissing, threadsDir } from "./thread-archive";
+import { renderThreadBlock, ThreadReadModal } from "./thread-block-view";
 
 export default class ClaudeTerminalPlugin extends Plugin {
   settings: ClaudeTerminalSettings = DEFAULT_SETTINGS;
@@ -87,6 +92,17 @@ export default class ClaudeTerminalPlugin extends Plugin {
         await this.saveSettings();
         this.applyCenteredClassToAllViews();
       },
+    });
+
+    // Save a group of open sessions to a note, triggered by the in-terminal agent:
+    //   open "obsidian://claude-threads-save?note=<path>&group=<name>&tabs=<name,name>"
+    this.registerObsidianProtocolHandler("claude-threads-save", (params) => {
+      void handleSaveThreads(this, params);
+    });
+
+    // Render saved-thread blocks in notes into a reopen panel.
+    this.registerMarkdownCodeBlockProcessor("claude-threads", (source, el) => {
+      renderThreadBlock(this, source, el);
     });
 
     this.addSettingTab(new ClaudeTerminalSettingTab(this.app, this));
@@ -246,6 +262,72 @@ export default class ClaudeTerminalPlugin extends Plugin {
     const allHighlights: TerminalHighlight[] = [...this.floating.getAllHighlights()];
     this.forEachView(view => allHighlights.push(...view.getAllHighlights()));
     return allHighlights;
+  }
+
+  /** Every open tab (as a thread ref) across the floating window and all docked views. */
+  collectAllThreadRefs(): ThreadRef[] {
+    const refs: ThreadRef[] = [...this.floating.snapshotThreadRefs()];
+    this.forEachView(view => refs.push(...view.snapshotThreadRefs()));
+    return refs;
+  }
+
+  /** Restore a purged transcript from the vault archive so `claude --resume` works. */
+  private rehydrateThread(vaultPath: string, ref: ThreadRef) {
+    if (ref.remote || !ref.session || !ref.archive) return;
+    const dest = transcriptPath(os.homedir(), ref.cwd, ref.session);
+    rehydrateIfMissing(path.join(threadsDir(vaultPath), ref.archive), dest);
+  }
+
+  /** Reopen saved threads as tabs (rehydrating archives first), appending to a terminal. */
+  async reopenThreads(refs: ThreadRef[]) {
+    if (refs.length === 0) return;
+    const vaultPath = this.getVaultPath();
+    for (const ref of refs) this.rehydrateThread(vaultPath, ref);
+
+    // Floating window: already on top; just spawn the tabs.
+    if (this.floating.isVisible && this.floating.manager) {
+      refs.forEach(r => this.floating.reopenThread(r));
+      return;
+    }
+    // Docked view exists: spawn the tabs and switch focus to the terminal.
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_TERMINAL);
+    if (leaves.length > 0) {
+      const view = leaves[0].view as ClaudeTerminalView;
+      refs.forEach(r => view.reopenThread(r));
+      void this.app.workspace.revealLeaf(leaves[0]);
+      return;
+    }
+    // No terminal open — open one (openInSidebar reveals it), then reopen once
+    // its manager has initialized.
+    await this.openInSidebar();
+    const opened = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_TERMINAL);
+    const leaf = opened[0];
+    const view = leaf ? (leaf.view as ClaudeTerminalView) : null;
+    if (view) {
+      window.setTimeout(() => {
+        refs.forEach(r => view.reopenThread(r));
+        void this.app.workspace.revealLeaf(leaf);
+      }, 400);
+    } else {
+      new Notice("Open a Claude terminal first, then reopen the threads.");
+    }
+  }
+
+  /** Open the "Read" modal for a saved thread's archived transcript. */
+  readThread(ref: ThreadRef) {
+    new ThreadReadModal(this, ref).open();
+  }
+
+  /**
+   * Re-copy a tracked (already-saved) session's transcript so the vault archive
+   * captures conversation since the last save. No-op unless an archive already
+   * exists for this session id (i.e. it was saved to a note).
+   */
+  refreshArchiveIfTracked(sessionId: string | null, vaultPath: string) {
+    if (!sessionId) return;
+    const dir = threadsDir(vaultPath);
+    if (!fs.existsSync(path.join(dir, `${sessionId}.jsonl`))) return;
+    archiveTranscript(transcriptPath(os.homedir(), vaultPath, sessionId), dir);
   }
 
   /** Called by highlight controllers after any create/merge/delete/clear. */
