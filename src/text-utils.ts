@@ -1,4 +1,19 @@
 /**
+ * Open a URL from terminal output in the system browser. Uses Electron's
+ * shell via window.require (the pattern used elsewhere in this plugin) and
+ * falls back to window.open if it isn't reachable.
+ */
+export function openExternalLink(uri: string): void {
+  try {
+    (window as unknown as {
+      require: (m: string) => { shell: { openExternal(u: string): void } };
+    }).require("electron").shell.openExternal(uri);
+  } catch {
+    window.open(uri, "_blank");
+  }
+}
+
+/**
  * Clean up text copied from the terminal: normalize unicode whitespace,
  * trim trailing whitespace, dedent, and collapse blank-line runs.
  */

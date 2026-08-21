@@ -1,6 +1,7 @@
 import { Notice } from "obsidian";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import * as path from "path";
 import type {
   PersistedSession,
@@ -14,7 +15,7 @@ import { makeLocalProbe, watchForClaudeSessionId } from "./claude-session";
 import type { ThreadRef } from "./claude-threads";
 import { debugLog } from "./debug";
 import { buildRemoteLaunchCommand, killRemoteTmuxSession, makeTmuxName, probeRemoteSessionId } from "./remote";
-import { cleanCopyText, normalizeCssColor } from "./text-utils";
+import { cleanCopyText, normalizeCssColor, openExternalLink } from "./text-utils";
 import type ClaudeTerminalPlugin from "./main";
 
 type NodePtyModule = typeof import("node-pty");
@@ -131,6 +132,10 @@ export class TerminalSessionManager {
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(content);
+
+    // Make http(s) URLs in terminal output clickable (opens in the system
+    // browser). See openExternalLink for how the URL is opened.
+    terminal.loadAddon(new WebLinksAddon((_event, uri) => openExternalLink(uri)));
 
     // Invert xterm's mouse-capture bypass: plain drags always select text
     // (plugin selection color + highlighter), Shift+drag sends the mouse to
