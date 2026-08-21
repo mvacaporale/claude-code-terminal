@@ -91,6 +91,8 @@ export interface ClaudeTerminalSettings {
   persistedSessions: PersistedSession[];
   remoteHost: string;
   remoteVaultPath: string;
+  /** Vault-relative note that in-UI feedback is appended to (the triage input). */
+  feedbackNotePath: string;
 }
 
 export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
@@ -109,4 +111,5 @@ export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   persistedSessions: [],
   remoteHost: "",
   remoteVaultPath: "",
+  feedbackNotePath: "5. Code/_index.md",
 };
