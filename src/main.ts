@@ -1,4 +1,4 @@
-import { FileSystemAdapter, Notice, Plugin } from "obsidian";
+import { FileSystemAdapter, Notice, Plugin, TFile, moment, normalizePath } from "obsidian";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
@@ -21,6 +21,8 @@ import { ThreadRef, transcriptPath } from "./claude-threads";
 import { handleSaveThreads } from "./thread-save";
 import { archiveTranscript, rehydrateIfMissing, threadsDir } from "./thread-archive";
 import { renderThreadBlock, ThreadReadModal } from "./thread-block-view";
+import { FeedbackModal } from "./feedback-modal";
+import { persistFeedback } from "./feedback-note";
 
 export default class ClaudeTerminalPlugin extends Plugin {
   settings: ClaudeTerminalSettings = DEFAULT_SETTINGS;
@@ -43,6 +45,16 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
     this.addRibbonIcon("list-checks", "Open Review Console", () => {
       void this.openReviewConsole();
+    });
+
+    this.addRibbonIcon("message-square-plus", "Send feedback to backlog", () => {
+      this.openFeedbackModal();
+    });
+
+    this.addCommand({
+      id: "send-feedback",
+      name: "Send feedback to backlog",
+      callback: () => this.openFeedbackModal(),
     });
 
     this.addCommand({
@@ -311,6 +323,49 @@ export default class ClaudeTerminalPlugin extends Plugin {
     const leaf = this.app.workspace.getLeaf("tab");
     await leaf.setViewState({ type: VIEW_TYPE_CLAUDE_TERMINAL, active: true });
     await this.app.workspace.revealLeaf(leaf);
+  }
+
+  // ---- Feedback ----
+
+  /** Open the in-UI feedback modal, wired to append into the backlog note. */
+  openFeedbackModal() {
+    new FeedbackModal(this.app, (message, screenshots) => this.submitFeedback(message, screenshots)).open();
+  }
+
+  /**
+   * Persist a feedback submission into the backlog note (+ screenshots).
+   * The routing logic lives in persistFeedback; here we just adapt Obsidian's
+   * vault to its injected-deps interface.
+   */
+  async submitFeedback(message: string, screenshots: Uint8Array[]): Promise<void> {
+    const notePath = normalizePath(this.settings.feedbackNotePath);
+    await persistFeedback(
+      {
+        readFileIfExists: async (p) => {
+          const f = this.app.vault.getAbstractFileByPath(p);
+          return f instanceof TFile ? await this.app.vault.read(f) : null;
+        },
+        writeFile: async (p, data) => {
+          const f = this.app.vault.getAbstractFileByPath(p);
+          if (f instanceof TFile) await this.app.vault.modify(f, data);
+          else await this.app.vault.create(p, data);
+        },
+        writeBinary: async (p, data) => {
+          await this.app.vault.createBinary(normalizePath(p), data);
+        },
+        ensureFolder: (p) => this.ensureFolder(normalizePath(p)),
+      },
+      { message, screenshots, dateStr: moment().format("YYYY-MM-DD"), stamp: Date.now(), notePath }
+    );
+  }
+
+  private async ensureFolder(dir: string): Promise<void> {
+    if (!dir || dir === "." || this.app.vault.getAbstractFileByPath(dir)) return;
+    try {
+      await this.app.vault.createFolder(dir);
+    } catch {
+      // Folder was created concurrently or already exists — safe to ignore.
+    }
   }
 
   // ---- Highlights ----

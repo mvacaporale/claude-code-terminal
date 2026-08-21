@@ -117,6 +117,18 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
         })
       );
 
+    new Setting(containerEl)
+      .setName("Feedback note")
+      .setDesc("Vault-relative note that in-UI feedback is appended to, under its '## Ideas / Backlog' section (the product-triage input).")
+      .addText((text) =>
+        text.setPlaceholder("5. Code/_index.md")
+          .setValue(this.plugin.settings.feedbackNotePath)
+          .onChange(async (value) => {
+            this.plugin.settings.feedbackNotePath = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
     containerEl.createEl("h3", { text: "Remote sessions" });
     containerEl.createEl("p", {
       cls: "setting-item-description",
