@@ -12,6 +12,8 @@ export interface TabBarHost {
   onReorder(fromId: string, toId: string, before: boolean): void;
   /** `remote: true` requests a fresh remote session; a RemoteInfo reattaches an existing one. */
   onNewSession(name?: string, resume?: boolean, claudeSessionId?: string, remote?: RemoteInfo | boolean): void;
+  /** Fork the active session into a new parallel tab. */
+  onForkSession(): void;
   onKillRemote(id: string): void;
   onToggleHighlight(): Promise<void>;
   getSessions(): Map<string, TerminalSession>;
@@ -204,6 +206,24 @@ export class TerminalTabBar {
           .onClick(() => this.host.onNewSession(undefined, false, undefined, true))
       );
       menu.showAtMouseEvent(e);
+    });
+
+    // Fork button: branch the active session into a new parallel tab.
+    // Disabled until a local session has a detected Claude id to fork from.
+    const activeId = this.host.getActiveSessionId();
+    const activeSession = activeId ? this.host.getSessions().get(activeId) : null;
+    const canFork = !!activeSession && !!activeSession.claudeSessionId && !activeSession.remote;
+    const forkBtn = actionsWrapper.createDiv({
+      cls: `claude-terminal-tab-action ${canFork ? "" : "is-disabled"}`,
+      attr: { "aria-label": "Fork session" },
+    });
+    setIcon(forkBtn, "git-fork");
+    forkBtn.title = canFork
+      ? "Fork this session into a new tab"
+      : "Fork unavailable (start Claude in a local session first)";
+    forkBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (canFork) this.host.onForkSession();
     });
 
     // History button

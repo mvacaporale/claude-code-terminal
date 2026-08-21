@@ -15,6 +15,7 @@ import type { ThreadRef } from "./claude-threads";
 import { debugLog } from "./debug";
 import { buildRemoteLaunchCommand, killRemoteTmuxSession, makeTmuxName, probeRemoteSessionId } from "./remote";
 import { cleanCopyText, normalizeCssColor } from "./text-utils";
+import { buildLocalLaunchCommand } from "./launch-command";
 import type ClaudeTerminalPlugin from "./main";
 
 type NodePtyModule = typeof import("node-pty");
@@ -54,6 +55,7 @@ export class TerminalSessionManager {
       onReorder: (fromId, toId, before) => this.reorderSession(fromId, toId, before),
       onNewSession: (name, resume, claudeSessionId, remote) =>
         this.createSession(name, resume, false, claudeSessionId, remote),
+      onForkSession: () => this.forkActiveSession(),
       onKillRemote: (id) => this.killRemoteSession(id),
       onToggleHighlight: async () => {
         this.plugin.settings.highlightingEnabled = !this.plugin.settings.highlightingEnabled;
@@ -82,7 +84,26 @@ export class TerminalSessionManager {
 
   // ---- Session lifecycle ----
 
-  createSession(name?: string, resume = false, isRestored = false, claudeSessionId?: string, remote?: RemoteInfo | boolean, initialInput?: string) {
+  /**
+   * Fork the active session into a new parallel tab via
+   * `claude --resume <id> --fork-session`. Local sessions only, and only once
+   * the session's Claude id has been detected (needed as the fork source).
+   */
+  forkActiveSession() {
+    const active = this.activeSessionId ? this.sessions.get(this.activeSessionId) : null;
+    if (!active) return;
+    if (active.remote) {
+      new Notice("Forking is only supported for local sessions.");
+      return;
+    }
+    if (!active.claudeSessionId) {
+      new Notice("No Claude session to fork yet — wait for Claude to start.");
+      return;
+    }
+    this.createSession(`${active.name} (fork)`, true, false, active.claudeSessionId, undefined, undefined, true);
+  }
+
+  createSession(name?: string, resume = false, isRestored = false, claudeSessionId?: string, remote?: RemoteInfo | boolean, initialInput?: string, fork = false) {
     // `remote === true` is a fresh UI request: snapshot host/path from
     // settings and mint a tmux name. A RemoteInfo object (restore/history)
     // is used as-is so the tab reattaches its original tmux session.
@@ -270,7 +291,7 @@ export class TerminalSessionManager {
     // Single rAF: fit, start PTY, focus, render tabs
     requestAnimationFrame(() => {
       fitAddon.fit();
-      this.startPty(session, resume, initialInput);
+      this.startPty(session, resume, initialInput, fork);
       terminal.focus();
       this.renderTabBar();
     });
@@ -519,7 +540,7 @@ export class TerminalSessionManager {
     };
   }
 
-  private startPty(session: TerminalSession, resume = false, initialInput?: string) {
+  private startPty(session: TerminalSession, resume = false, initialInput?: string, fork = false) {
     if (!session.terminal) return;
 
     try {
@@ -566,17 +587,13 @@ export class TerminalSessionManager {
 
         this.detectClaudeSessionId(session);
       } else if (this.plugin.settings.autoLaunchClaude || initialInput) {
-        let cmd: string;
-        if (initialInput) {
-          // A review session always wants a fresh conversation to drop the prompt into.
-          cmd = "clear && claude";
-        } else if (resume && session.claudeSessionId) {
-          cmd = `clear && claude --resume ${session.claudeSessionId}`;
-        } else if (resume || this.sessionCounter === 1) {
-          cmd = "clear && claude --continue";
-        } else {
-          cmd = "clear && claude";
-        }
+        const cmd = buildLocalLaunchCommand({
+          initialInput,
+          resume,
+          fork,
+          claudeSessionId: session.claudeSessionId,
+          isFirstSession: this.sessionCounter === 1,
+        });
         setTimeout(() => {
           session.ptyProcess?.write(cmd + "\r");
         }, 300);
