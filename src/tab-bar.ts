@@ -14,6 +14,8 @@ export interface TabBarHost {
   onNewSession(name?: string, resume?: boolean, claudeSessionId?: string, remote?: RemoteInfo | boolean): void;
   /** Fork the active session into a new parallel tab. */
   onForkSession(): void;
+  /** Open the in-UI feedback modal. */
+  onSendFeedback(): void;
   onKillRemote(id: string): void;
   onToggleHighlight(): Promise<void>;
   getSessions(): Map<string, TerminalSession>;
@@ -236,6 +238,15 @@ export class TerminalTabBar {
         this.showHistoryMenu(historyBtn);
       });
     }
+
+    // Feedback button: open the in-UI feedback modal (routes to the backlog).
+    const feedbackBtn = actionsWrapper.createDiv({ cls: "claude-terminal-tab-action", attr: { "aria-label": "Send feedback" } });
+    setIcon(feedbackBtn, "message-square-plus");
+    feedbackBtn.title = "Send feedback to backlog";
+    feedbackBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.host.onSendFeedback();
+    });
 
     // Restore scroll position
     if (savedScrollLeft > 0) {
