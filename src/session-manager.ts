@@ -57,6 +57,7 @@ export class TerminalSessionManager {
       onNewSession: (name, resume, claudeSessionId, remote) =>
         this.createSession(name, resume, false, claudeSessionId, remote),
       onForkSession: () => this.forkActiveSession(),
+      onSendFeedback: () => this.plugin.openFeedbackModal(),
       onKillRemote: (id) => this.killRemoteSession(id),
       onToggleHighlight: async () => {
         this.plugin.settings.highlightingEnabled = !this.plugin.settings.highlightingEnabled;
