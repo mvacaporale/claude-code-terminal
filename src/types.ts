@@ -75,6 +75,28 @@ export interface PersistedSession {
   remote?: RemoteInfo;
 }
 
+/**
+ * State that must not bleed between vaults. Both vaults symlink this plugin to
+ * one folder (one shared data.json), so these fields live in a per-vault slice
+ * (see `vaultData`) rather than at the top level.
+ */
+export interface VaultScopedData {
+  persistedSessions: PersistedSession[];
+  sessionHistory: SessionHistoryEntry[];
+  remoteHost: string;
+  remoteVaultPath: string;
+  highlightSavePath: string;
+}
+
+/** Keys of the settings that are hydrated from / synced to the per-vault slice. */
+export const PER_VAULT_KEYS = [
+  "persistedSessions",
+  "sessionHistory",
+  "remoteHost",
+  "remoteVaultPath",
+  "highlightSavePath",
+] as const;
+
 export interface ClaudeTerminalSettings {
   shellPath: string;
   autoLaunchClaude: boolean;
@@ -93,6 +115,14 @@ export interface ClaudeTerminalSettings {
   remoteVaultPath: string;
   /** Vault-relative note that in-UI feedback is appended to (the triage input). */
   feedbackNotePath: string;
+  /** Per-vault slices keyed by vault base path; see VaultScopedData. */
+  vaultData: Record<string, VaultScopedData>;
+  /**
+   * Immutable snapshot of the pre-scoping shared values, captured once on first
+   * load. Any vault opening without its own slice seeds from this, so every
+   * vault starts from the same original tab list, then diverges.
+   */
+  vaultSeed?: VaultScopedData;
 }
 
 export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
@@ -102,7 +132,7 @@ export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   floatingWidth: 500,
   floatingHeight: 350,
   highlightColor: "#ebc965",
-  highlightSavePath: "3. Resources/Highlights",
+  highlightSavePath: "highlights",
   centeredView: false,
   sessionHistory: [],
   highlightingEnabled: true,
@@ -112,4 +142,5 @@ export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   remoteHost: "",
   remoteVaultPath: "",
   feedbackNotePath: "5. Code/_index.md",
+  vaultData: {},
 };

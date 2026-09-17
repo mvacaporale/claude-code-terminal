@@ -10,6 +10,7 @@ import {
   VIEW_TYPE_CLAUDE_TERMINAL,
   VIEW_TYPE_REVIEW_CONSOLE,
 } from "./types";
+import { hydrateVaultSlice, syncVaultSlice, mergePersistable } from "./vault-scoping";
 import { ClaudeTerminalView } from "./terminal-view";
 import { ReviewConsoleView } from "./review-console-view";
 import { FloatingWindow } from "./floating-window";
@@ -169,13 +170,25 @@ export default class ClaudeTerminalPlugin extends Plugin {
       migrated = true;
     }
 
+    // Namespace tab/session/remote state per vault (both vaults share one
+    // symlinked data.json). Seeding a new vault's slice needs a save.
+    if (hydrateVaultSlice(this.settings, this.getVaultPath())) {
+      migrated = true;
+    }
+
     if (migrated) {
       void this.saveSettings();
     }
   }
 
   async saveSettings() {
-    await this.saveData(this.settings);
+    const key = this.getVaultPath();
+    syncVaultSlice(this.settings, key);
+    // Read-modify-write: both vaults share this data.json and each instance
+    // only holds the slices it loaded, so merge against the current on-disk
+    // state to avoid stomping the other vault's slice.
+    const onDisk = (await this.loadData()) as Partial<ClaudeTerminalSettings> | null;
+    await this.saveData(mergePersistable(this.settings, key, onDisk));
   }
 
   // ---- Session history ----
@@ -188,8 +201,8 @@ export default class ClaudeTerminalPlugin extends Plugin {
     const existing = history.find(e => e.name === name);
     const filtered = history.filter(e => e.name !== name);
     filtered.push({ name, sessionId: sessionId ?? existing?.sessionId, remote: remote ?? existing?.remote });
-    if (filtered.length > 30) {
-      filtered.splice(0, filtered.length - 30);
+    if (filtered.length > 100) {
+      filtered.splice(0, filtered.length - 100);
     }
     this.settings.sessionHistory = filtered;
     void this.saveSettings();

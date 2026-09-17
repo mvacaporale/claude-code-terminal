@@ -87,10 +87,10 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
       .setName("Highlight save path")
       .setDesc("Folder path in vault where highlights are saved")
       .addText((text) =>
-        text.setPlaceholder("3. Resources/Highlights")
+        text.setPlaceholder("highlights")
           .setValue(this.plugin.settings.highlightSavePath)
           .onChange(async (value) => {
-            this.plugin.settings.highlightSavePath = value || "3. Resources/Highlights";
+            this.plugin.settings.highlightSavePath = value || "highlights";
             await this.plugin.saveSettings();
           })
       );
