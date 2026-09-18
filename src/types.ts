@@ -61,6 +61,9 @@ export interface TerminalSession {
   fitDebounceTimer: NodeJS.Timeout | null;
   reanchorTimer: NodeJS.Timeout | null;
   isRestored: boolean;
+  /** True when the tab carries a user-supplied name (rename/restore/fork/reopen);
+   * false for auto-named "Session N" tabs. Only user-named sessions are persisted. */
+  userNamed: boolean;
 }
 
 export interface SessionHistoryEntry {

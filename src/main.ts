@@ -11,6 +11,7 @@ import {
   VIEW_TYPE_REVIEW_CONSOLE,
 } from "./types";
 import { hydrateVaultSlice, syncVaultSlice, mergePersistable } from "./vault-scoping";
+import { isAutoSessionName } from "./session-history";
 import { ClaudeTerminalView } from "./terminal-view";
 import { ReviewConsoleView } from "./review-console-view";
 import { FloatingWindow } from "./floating-window";
@@ -173,6 +174,19 @@ export default class ClaudeTerminalPlugin extends Plugin {
     // Namespace tab/session/remote state per vault (both vaults share one
     // symlinked data.json). Seeding a new vault's slice needs a save.
     if (hydrateVaultSlice(this.settings, this.getVaultPath())) {
+      migrated = true;
+    }
+
+    // Drop legacy auto-named "Session N" entries: only user-named sessions are
+    // persisted now. Runs after hydrateVaultSlice populates the per-vault fields.
+    const prunedSessions = this.settings.persistedSessions.filter(s => !isAutoSessionName(s.name));
+    if (prunedSessions.length !== this.settings.persistedSessions.length) {
+      this.settings.persistedSessions = prunedSessions;
+      migrated = true;
+    }
+    const prunedHistory = this.settings.sessionHistory.filter(e => !isAutoSessionName(e.name));
+    if (prunedHistory.length !== this.settings.sessionHistory.length) {
+      this.settings.sessionHistory = prunedHistory;
       migrated = true;
     }
 

@@ -124,9 +124,12 @@ export class TerminalSessionManager {
 
     this.sessionCounter++;
     const id = `session-${Date.now()}-${this.sessionCounter}`;
+    const userNamed = !!name;
     const sessionName = name || `Session ${this.sessions.size + 1}`;
 
-    this.plugin.addSessionToHistory(sessionName, claudeSessionId || undefined, remoteInfo || undefined);
+    if (userNamed) {
+      this.plugin.addSessionToHistory(sessionName, claudeSessionId || undefined, remoteInfo || undefined);
+    }
 
     const container = this.sessionsContainer.createDiv({ cls: "claude-terminal-session" });
     const content = container.createDiv({ cls: "claude-terminal-session-content" });
@@ -204,6 +207,7 @@ export class TerminalSessionManager {
       fitDebounceTimer: null,
       reanchorTimer: null,
       isRestored,
+      userNamed,
     };
 
     // Custom key event handler: Shift+Enter, and clean-copy on Cmd/Ctrl+C
@@ -386,6 +390,7 @@ export class TerminalSessionManager {
     const trimmed = newName.trim();
     if (trimmed.length === 0) return;
     session.name = trimmed;
+    session.userNamed = true;
     this.plugin.addSessionToHistory(trimmed, session.claudeSessionId || undefined, session.remote || undefined);
     this.renderTabBar();
     this.persistSessions();
@@ -415,6 +420,7 @@ export class TerminalSessionManager {
     if (!this.persist || this.isRestoring) return;
     const list: PersistedSession[] = [];
     this.sessions.forEach(s => {
+      if (!s.userNamed) return;
       list.push({ name: s.name, claudeSessionId: s.claudeSessionId || undefined, remote: s.remote || undefined });
     });
     this.plugin.settings.persistedSessions = list;
