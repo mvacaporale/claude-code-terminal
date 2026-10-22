@@ -164,13 +164,10 @@ npm run rebuild:electron
 ### Auto-update on the Mac
 
 Obsidian loads this plugin straight from the Mac's checkout, so "deploying" means that checkout
-pulls `main` and rebuilds. `scripts/mac-autoupdate.sh` does that every 10 minutes under launchd,
-but only when the checkout is on `main` with no local changes (otherwise it logs "skipping").
-Reload the plugin in Obsidian to pick up a new build.
-
-```bash
-scripts/install-mac-autoupdate.sh   # one-time; log in ~/Library/Logs/claude-code-terminal-autoupdate.log
-```
+pulls `main` and rebuilds. Each time Obsidian launches or reloads, the plugin runs
+`scripts/mac-autoupdate.sh` in the background (`src/self-update.ts`); when it built something new, a
+notice says to reload Obsidian once more to use it. It only updates when the checkout is on `main`
+with no local changes (otherwise it logs "skipping"). Log: `~/Library/Logs/claude-code-terminal-autoupdate.log`.
 
 ### Project Structure
 

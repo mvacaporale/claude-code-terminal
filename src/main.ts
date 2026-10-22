@@ -25,6 +25,7 @@ import { archiveTranscript, rehydrateIfMissing, threadsDir } from "./thread-arch
 import { renderThreadBlock, ThreadReadModal } from "./thread-block-view";
 import { FeedbackModal } from "./feedback-modal";
 import { persistFeedback } from "./feedback-note";
+import { selfUpdate } from "./self-update";
 
 export default class ClaudeTerminalPlugin extends Plugin {
   settings: ClaudeTerminalSettings = DEFAULT_SETTINGS;
@@ -143,6 +144,10 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
     this.app.workspace.onLayoutReady(() => {
       this.floating.create();
+      // Each launch or reload pulls main and rebuilds in the background; the new build loads next reload.
+      void selfUpdate(this.getPluginPath()).then((commit) => {
+        if (commit) new Notice(`Claude Terminal updated to ${commit}. Reload Obsidian to use it.`, 10000);
+      });
     });
   }
 

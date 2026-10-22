@@ -1,6 +1,6 @@
 #!/bin/bash
 # Keeps the Mac's live plugin checkout on the latest main, so merging a PR from
-# anywhere "deploys" it. Run by launchd (see scripts/install-mac-autoupdate.sh).
+# anywhere "deploys" it. The plugin runs this on each Obsidian launch or reload (src/self-update.ts).
 # Skips quietly unless the checkout is on main, has no local changes, and can fast-forward.
 set -euo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
