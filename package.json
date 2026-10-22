@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit && node esbuild.config.mjs production",
-    "rebuild:electron": "electron-rebuild -f -w node-pty -v 37.3.1",
+    "rebuild:electron": "electron-rebuild -f -w node-pty -v 37.10.2",
     "test": "vitest run"
   },
   "dependencies": {

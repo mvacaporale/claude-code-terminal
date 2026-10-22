@@ -1,3 +1,11 @@
+---
+type: note
+tags: [claude-terminal, session-groups, development, todo]
+context:
+last_edited: 2026-08-07
+summary: Lists follow-up tasks and considerations for the Claude Terminal session groups feature.
+---
+
 # TODO — Session Groups (save threads to a note)
 
 Feature is built, unit-tested (32 tests), and validated live end-to-end (save → archive → render →
