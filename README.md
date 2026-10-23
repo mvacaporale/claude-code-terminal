@@ -104,6 +104,8 @@ Open Settings > Claude Terminal:
 | Font size | Terminal font size | 13px |
 | Remote host | SSH destination for remote sessions | Empty (disabled) |
 | Remote working directory | Directory Claude runs in on the remote | Empty |
+| Feedback repo | `owner/name` of the private repo feedback is filed into | Empty (feedback off) |
+| Feedback GitHub token | Fine-grained token for that repo only | Empty (feedback off) |
 
 ## Remote Sessions
 
@@ -120,6 +122,18 @@ You can run Claude Code on a remote machine (e.g. an always-on server holding a 
 - Reopening (via the history dropdown or automatic restore on Obsidian reload) **reattaches** with scrollback and in-flight work intact.
 - To actually stop one, right-click the tab and choose **Kill remote session**.
 - If the remote machine rebooted, reopening recreates the session with `claude --resume`, continuing the same conversation.
+
+## Feedback
+
+The speech-bubble button (tab bar, ribbon, or the *Send feedback* command) opens a box for a note plus up to three screenshots. Each submission becomes a GitHub issue in a repo you own, labelled `feedback` and `claude-code-terminal`, with screenshots committed under `screenshots/claude-code-terminal/` in that repo. Nothing is written to the vault.
+
+Feedback is off until both settings are filled in, so other people running this plugin can't file into your inbox. To set it up:
+
+1. Create a **private** repo for the inbox (this plugin's repo is a public fork, so its own issues would be public), e.g. `you/claude-code-terminal-feedback`.
+2. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with access to **only** that repo and the permissions *Issues: Read and write* and *Contents: Read and write*.
+3. Paste the repo and token into *Settings > Claude Terminal*. The token is stored in the plugin's `data.json`.
+
+If a send fails (offline, bad token), the box stays open with your text so you can retry.
 
 ## Claude Code Setup
 
@@ -174,7 +188,11 @@ with no local changes (otherwise it logs "skipping"). Log: `~/Library/Logs/claud
 ```
 claude-terminal/
 ├── src/
-│   └── main.ts         # Plugin source code
+│   ├── main.ts             # Plugin entry: views, commands, settings
+│   ├── feedback-modal.ts   # Feedback box (text + screenshots)
+│   ├── feedback-github.ts  # Files feedback as a GitHub issue
+│   └── …                   # Terminal, sessions, highlights, threads
+├── tests/              # vitest unit tests (npm test)
 ├── manifest.json       # Obsidian plugin manifest
 ├── package.json        # Dependencies & scripts
 ├── esbuild.config.mjs  # Build configuration

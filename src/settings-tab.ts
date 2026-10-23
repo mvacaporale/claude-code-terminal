@@ -118,16 +118,29 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Feedback note")
-      .setDesc("Vault-relative note that in-UI feedback is appended to, under its '## Ideas / Backlog' section (the product-triage input).")
+      .setName("Feedback repo")
+      .setDesc("owner/name of the private GitHub repo that the feedback button files issues into (labels: feedback, claude-code-terminal). Screenshots are committed under screenshots/ in that repo.")
       .addText((text) =>
-        text.setPlaceholder("5. Code/_index.md")
-          .setValue(this.plugin.settings.feedbackNotePath)
+        text.setPlaceholder("you/claude-code-terminal-feedback")
+          .setValue(this.plugin.settings.feedbackRepo)
           .onChange(async (value) => {
-            this.plugin.settings.feedbackNotePath = value.trim();
+            this.plugin.settings.feedbackRepo = value.trim();
             await this.plugin.saveSettings();
           })
       );
+
+    new Setting(containerEl)
+      .setName("Feedback GitHub token")
+      .setDesc("Fine-grained personal access token limited to the feedback repo, with Issues and Contents set to read and write. Stored in this plugin's data.json. Leave empty to turn feedback off.")
+      .addText((text) => {
+        text.inputEl.type = "password";
+        text.setPlaceholder("github_pat_…")
+          .setValue(this.plugin.settings.feedbackToken)
+          .onChange(async (value) => {
+            this.plugin.settings.feedbackToken = value.trim();
+            await this.plugin.saveSettings();
+          });
+      });
 
     containerEl.createEl("h3", { text: "Remote sessions" });
     containerEl.createEl("p", {
