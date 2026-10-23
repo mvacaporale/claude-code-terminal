@@ -239,10 +239,10 @@ export class TerminalTabBar {
       });
     }
 
-    // Feedback button: open the in-UI feedback modal (routes to the backlog).
+    // Feedback button: open the in-UI feedback modal (files a GitHub issue).
     const feedbackBtn = actionsWrapper.createDiv({ cls: "claude-terminal-tab-action", attr: { "aria-label": "Send feedback" } });
     setIcon(feedbackBtn, "message-square-plus");
-    feedbackBtn.title = "Send feedback to backlog";
+    feedbackBtn.title = "Send feedback";
     feedbackBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.host.onSendFeedback();

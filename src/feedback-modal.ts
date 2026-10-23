@@ -6,8 +6,8 @@ const CAPTURE_DELAY_S = 3;
 
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/** Called with the feedback text and any captured PNGs when the user submits. */
-export type FeedbackSubmit = (message: string, screenshots: Uint8Array[]) => Promise<void>;
+/** Called with the feedback text and any captured PNGs; resolves to the success notice. */
+export type FeedbackSubmit = (message: string, screenshots: Uint8Array[]) => Promise<string>;
 
 /**
  * In-UI feedback modal: free text plus optional screenshots (mirrors the
@@ -114,11 +114,10 @@ export class FeedbackModal extends Modal {
     this.submitting = true;
     this.render();
     try {
-      await this.onSubmit(message, this.shots);
-      new Notice("Feedback captured to the backlog — thank you!");
+      new Notice(await this.onSubmit(message, this.shots));
       this.close();
     } catch (e) {
-      new Notice(`Couldn't save feedback: ${(e as Error).message}`);
+      new Notice(`Couldn't send feedback: ${(e as Error).message}`);
       this.submitting = false;
       this.render();
     }
