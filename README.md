@@ -25,6 +25,7 @@ An embedded terminal plugin for Obsidian that integrates with [Claude Code](http
 - **Theme Matching**: Terminal colors adapt to your Obsidian theme
 - **Resizable & Draggable**: Floating window can be positioned and resized
 - **Full PTY Support**: Real terminal emulation via node-pty
+- **Paste screenshots**: <kbd>Cmd+V</kbd> with an image on the clipboard saves it to a temp file and pastes its path, which Claude Code attaches as an image (local tabs only)
 
 ## Requirements
 

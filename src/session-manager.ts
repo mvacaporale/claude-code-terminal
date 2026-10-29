@@ -3,6 +3,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import * as path from "path";
+import * as os from "os";
+import { promises as fsp } from "fs";
 import type {
   PersistedSession,
   RemoteInfo,
@@ -17,6 +19,7 @@ import { debugLog } from "./debug";
 import { buildRemoteLaunchCommand, killRemoteTmuxSession, makeTmuxName, probeRemoteSessionId } from "./remote";
 import { cleanCopyText, normalizeCssColor, openExternalLink } from "./text-utils";
 import { buildLocalLaunchCommand } from "./launch-command";
+import { pastedImagePath, pickPastedImage } from "./image-paste";
 import type ClaudeTerminalPlugin from "./main";
 
 type NodePtyModule = typeof import("node-pty");
@@ -243,6 +246,30 @@ export class TerminalSessionManager {
 
       return true;
     });
+
+    // Pasting a screenshot: save it to a temp file and paste its path, which
+    // Claude Code turns into an image attachment. Capture phase so this runs
+    // before xterm's own (text-only) paste handler.
+    content.addEventListener("paste", (e: ClipboardEvent) => {
+      const item = pickPastedImage(Array.from(e.clipboardData?.items ?? []));
+      const file = item?.getAsFile();
+      if (!file) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (session.remote) {
+        new Notice("Pasting screenshots only works in local tabs.");
+        return;
+      }
+      void (async () => {
+        try {
+          const dest = pastedImagePath(os.tmpdir(), new Date(), file.type);
+          await fsp.writeFile(dest, Buffer.from(await file.arrayBuffer()));
+          terminal.paste(dest);
+        } catch (err) {
+          new Notice(`Couldn't paste the screenshot: ${String(err)}`);
+        }
+      })();
+    }, true);
 
     // Auto-highlight on selection (gated by setting)
     let dragStart: { x: number; y: number; alt: boolean; shift: boolean } | null = null;
