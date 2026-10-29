@@ -9,7 +9,7 @@ import {
 } from "../src/feedback-github";
 
 const meta = { pluginVersion: "1.2.0", vaultName: "Lodestone", platform: "darwin", dateStr: "2026-10-23" };
-const target = { repo: "mvacaporale/claude-code-terminal", token: "tok" };
+const target = { repo: "mvacaporale/claude-code-terminal-feedback", token: "tok" };
 
 /** Fake GitHub API at the HTTP boundary; records every request. */
 function fakeGitHub(

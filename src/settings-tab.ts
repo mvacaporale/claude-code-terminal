@@ -121,7 +121,7 @@ export class ClaudeTerminalSettingTab extends PluginSettingTab {
       .setName("Feedback repo")
       .setDesc("owner/name of the private GitHub repo that the feedback button files issues into (label: feedback). Screenshots are committed to its feedback-screenshots branch.")
       .addText((text) =>
-        text.setPlaceholder("mvacaporale/claude-code-terminal")
+        text.setPlaceholder("you/claude-code-terminal-feedback")
           .setValue(this.plugin.settings.feedbackRepo)
           .onChange(async (value) => {
             this.plugin.settings.feedbackRepo = value.trim();

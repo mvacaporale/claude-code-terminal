@@ -1,8 +1,9 @@
 /**
- * Files in-UI feedback as a GitHub issue in the plugin's own (private) repo.
- * Only an install holding a token with write access to that repo can file.
- * Screenshots go on a side branch so main, which the Mac auto-pulls, stays
- * clean. Kept free of Obsidian imports so it can be unit-tested; main.ts
+ * Files in-UI feedback as a GitHub issue in a private feedback repo (this
+ * plugin's own repo is a public fork). Only an install holding a token with
+ * write access to that repo can file, so other people running the plugin
+ * can't reach the inbox. Screenshots go on a side branch, matching the
+ * miciato-app feedback layout. Kept free of Obsidian imports so it can be unit-tested; main.ts
  * injects `requestUrl`.
  */
 
