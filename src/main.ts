@@ -19,7 +19,7 @@ import { ClaudeTerminalSettingTab } from "./settings-tab";
 import { saveHighlightsToVault } from "./highlights";
 import { HighlightNoteSync } from "./highlight-note";
 import { debugLog } from "./debug";
-import { ThreadRef, transcriptPath } from "./claude-threads";
+import { ThreadRef, resumeTarget, transcriptPath } from "./claude-threads";
 import { handleSaveThreads } from "./thread-save";
 import { archiveTranscript, rehydrateIfMissing, threadsDir } from "./thread-archive";
 import { renderThreadBlock, ThreadReadModal } from "./thread-block-view";
@@ -425,6 +425,13 @@ export default class ClaudeTerminalPlugin extends Plugin {
     if (refs.length === 0) return;
     const vaultPath = this.getVaultPath();
     for (const ref of refs) this.rehydrateThread(vaultPath, ref);
+    refs = refs.map(ref => {
+      const session = resumeTarget(ref, os.homedir(), fs.existsSync);
+      if (ref.session && !session) {
+        new Notice(`No saved conversation found for "${ref.name}"; starting a new one.`);
+      }
+      return { ...ref, session };
+    });
 
     // Floating window: already on top; just spawn the tabs.
     if (this.floating.isVisible && this.floating.manager) {

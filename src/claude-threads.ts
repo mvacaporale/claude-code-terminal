@@ -38,6 +38,18 @@ export function transcriptPath(homeDir: string, cwd: string, sessionId: string):
   return path.join(homeDir, ".claude", "projects", encodeProjectDir(cwd), `${sessionId}.jsonl`);
 }
 
+/**
+ * The session id a saved thread should resume, or null to start fresh.
+ * Local threads only resume when the transcript exists, so a stale id fails
+ * visibly instead of with "No conversation found". Remote transcripts live on
+ * the remote host and can't be checked here.
+ */
+export function resumeTarget(ref: ThreadRef, homeDir: string, exists: (p: string) => boolean): string | null {
+  if (!ref.session) return null;
+  if (ref.remote) return ref.session;
+  return exists(transcriptPath(homeDir, ref.cwd, ref.session)) ? ref.session : null;
+}
+
 export function serializeThreadGroup(g: ThreadGroup): string {
   return JSON.stringify(g, null, 2);
 }

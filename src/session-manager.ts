@@ -445,9 +445,13 @@ export class TerminalSessionManager {
     return refs;
   }
 
-  /** Open a saved thread as a new tab, resuming its Claude session. */
+  /**
+   * Open a saved thread as a new tab, resuming its Claude session. With no
+   * session id it starts a fresh conversation: resuming without an id would
+   * run `claude --continue` and open whichever conversation was most recent.
+   */
   reopenThread(ref: ThreadRef) {
-    this.createSession(ref.name, true, false, ref.session ?? undefined, ref.remote ?? undefined);
+    this.createSession(ref.name, !!ref.session, false, ref.session ?? undefined, ref.remote ?? undefined);
   }
 
   restoreSessions(): boolean {
@@ -640,7 +644,7 @@ export class TerminalSessionManager {
     } else {
       const shellPid = session.ptyProcess?.pid;
       if (!shellPid) return;
-      probe = makeLocalProbe(shellPid, this.plugin.getVaultPath(), launchTime);
+      probe = makeLocalProbe(shellPid, this.plugin.getVaultPath(), launchTime, id => this.isClaimedByOtherTab(session, id));
     }
 
     // For restored/resumed sessions, claudeSessionId holds the OLD id:
@@ -655,11 +659,20 @@ export class TerminalSessionManager {
         session.claudeSessionId !== null && session.claudeSessionId !== initialId,
       onDetected: (sessionId) => {
         if (sessionId === initialId) return; // stale read; keep polling
+        if (this.isClaimedByOtherTab(session, sessionId)) return; // another tab's session; keep polling
         session.claudeSessionId = sessionId;
         this.plugin.updateSessionHistoryId(session.name, sessionId);
         this.persistSessions();
       },
     });
+  }
+
+  /** True when a different open tab already owns this Claude session id. */
+  private isClaimedByOtherTab(session: TerminalSession, sessionId: string): boolean {
+    for (const s of this.sessions.values()) {
+      if (s !== session && s.claudeSessionId === sessionId) return true;
+    }
+    return false;
   }
 
   // ---- Tab bar ----

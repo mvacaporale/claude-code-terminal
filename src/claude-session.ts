@@ -43,11 +43,31 @@ export function watchForClaudeSessionId(options: DetectOptions): void {
 /**
  * Local detection: PID-based lookup first (child process →
  * ~/.claude/sessions/<pid>.json), then a fallback scan of the sessions
- * dir for files created after launch with a matching cwd.
+ * dir for files created after launch with a matching cwd. `isClaimed` marks
+ * ids already held by other open tabs, which the fallback must skip.
  */
-export function makeLocalProbe(shellPid: number, vaultPath: string, launchTime: number): () => Promise<string | null> {
+export function makeLocalProbe(
+  shellPid: number,
+  vaultPath: string,
+  launchTime: number,
+  isClaimed: (sessionId: string) => boolean,
+): () => Promise<string | null> {
   return async () =>
-    (await tryPidBased(shellPid)) ?? (await tryFallback(vaultPath, launchTime));
+    (await tryPidBased(shellPid)) ?? (await tryFallback(vaultPath, launchTime, isClaimed));
+}
+
+/**
+ * Newest candidate not already held by another tab. Without the claim check,
+ * tabs launched together (restore, "Reopen all") all grabbed the same newest
+ * session, so one id ended up mapped to several tab names.
+ */
+export function pickFallbackSession(
+  candidates: { sessionId: string; startedAt: number }[],
+  isClaimed: (sessionId: string) => boolean,
+): string | null {
+  const free = candidates.filter(c => !isClaimed(c.sessionId));
+  free.sort((a, b) => b.startedAt - a.startedAt);
+  return free[0]?.sessionId ?? null;
 }
 
 function pgrepChildren(pid: number): Promise<string[]> {
@@ -76,7 +96,7 @@ async function tryPidBased(shellPid: number): Promise<string | null> {
   return null;
 }
 
-async function tryFallback(vaultPath: string, launchTime: number): Promise<string | null> {
+async function tryFallback(vaultPath: string, launchTime: number, isClaimed: (sessionId: string) => boolean): Promise<string | null> {
   try {
     const files = (await fsp.readdir(SESSIONS_DIR)).filter(f => f.endsWith(".json"));
     const candidates: { sessionId: string; startedAt: number }[] = [];
@@ -86,8 +106,7 @@ async function tryFallback(vaultPath: string, launchTime: number): Promise<strin
         candidates.push({ sessionId: data.sessionId, startedAt: data.startedAt });
       }
     }
-    candidates.sort((a, b) => b.startedAt - a.startedAt);
-    return candidates[0]?.sessionId ?? null;
+    return pickFallbackSession(candidates, isClaimed);
   } catch {
     return null;
   }

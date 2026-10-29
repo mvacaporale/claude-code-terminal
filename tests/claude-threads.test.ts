@@ -7,6 +7,7 @@ import {
   buildThreadBlock,
   upsertThreadGroup,
   parseAllThreadGroups,
+  resumeTarget,
   type ThreadGroup,
 } from "../src/claude-threads";
 
@@ -79,5 +80,27 @@ describe("upsertThreadGroup", () => {
     expect(groups[1].threads).toEqual(other.threads);                   // Drafting untouched
     expect(out).toContain("# Levin");                                   // prose untouched
     expect(out).toContain("Prose.");
+  });
+});
+
+describe("resumeTarget", () => {
+  const local = { name: "Sleep Tracking", session: "1129ac8c", cwd: "/tmp/proj" };
+  const expected = "/home/mc/.claude/projects/-tmp-proj/1129ac8c.jsonl";
+
+  it("resumes the block's session id when its transcript exists", () => {
+    expect(resumeTarget(local, "/home/mc", p => p === expected)).toBe("1129ac8c");
+  });
+
+  it("starts fresh when the transcript is missing", () => {
+    expect(resumeTarget(local, "/home/mc", () => false)).toBeNull();
+  });
+
+  it("starts fresh when no session id was saved", () => {
+    expect(resumeTarget({ ...local, session: null }, "/home/mc", () => true)).toBeNull();
+  });
+
+  it("trusts remote ids, whose transcripts live on the remote host", () => {
+    const remote = { ...local, remote: { host: "miciato", path: "/root/vault", tmuxName: "t" } };
+    expect(resumeTarget(remote, "/home/mc", () => false)).toBe("1129ac8c");
   });
 });
