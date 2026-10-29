@@ -13,8 +13,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      # --ignore-scripts skips node-pty's native build, which tests and bundling don't need
-      - run: npm ci --legacy-peer-deps --ignore-scripts
+      # No lockfile is committed (gitignored), so install rather than `npm ci`.
+      # --ignore-scripts skips node-pty's native build, which tests and bundling don't need.
+      - run: npm install --legacy-peer-deps --ignore-scripts
       - run: npm test
       - run: npm run build
