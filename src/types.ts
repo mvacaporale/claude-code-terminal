@@ -116,8 +116,10 @@ export interface ClaudeTerminalSettings {
   persistedSessions: PersistedSession[];
   remoteHost: string;
   remoteVaultPath: string;
-  /** Vault-relative note that in-UI feedback is appended to (the triage input). */
-  feedbackNotePath: string;
+  /** "owner/name" of the repo that in-UI feedback is filed into as issues (a private repo, since this one is public). */
+  feedbackRepo: string;
+  /** Fine-grained GitHub token with Issues + Contents write on feedbackRepo only. Empty = feedback off. */
+  feedbackToken: string;
   /** Per-vault slices keyed by vault base path; see VaultScopedData. */
   vaultData: Record<string, VaultScopedData>;
   /**
@@ -144,6 +146,7 @@ export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   persistedSessions: [],
   remoteHost: "",
   remoteVaultPath: "",
-  feedbackNotePath: "5. Code/_index.md",
+  feedbackRepo: "mvacaporale/claude-code-terminal-feedback",
+  feedbackToken: "",
   vaultData: {},
 };

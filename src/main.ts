@@ -1,4 +1,4 @@
-import { FileSystemAdapter, Notice, Plugin, TFile, moment, normalizePath } from "obsidian";
+import { FileSystemAdapter, Notice, Plugin, moment, requestUrl } from "obsidian";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
@@ -24,7 +24,7 @@ import { handleSaveThreads } from "./thread-save";
 import { archiveTranscript, rehydrateIfMissing, threadsDir } from "./thread-archive";
 import { renderThreadBlock, ThreadReadModal } from "./thread-block-view";
 import { FeedbackModal } from "./feedback-modal";
-import { persistFeedback } from "./feedback-note";
+import { fileFeedbackIssue, isFeedbackConfigured } from "./feedback-github";
 import { selfUpdate } from "./self-update";
 
 export default class ClaudeTerminalPlugin extends Plugin {
@@ -50,13 +50,13 @@ export default class ClaudeTerminalPlugin extends Plugin {
       void this.openReviewConsole();
     });
 
-    this.addRibbonIcon("message-square-plus", "Send feedback to backlog", () => {
+    this.addRibbonIcon("message-square-plus", "Send feedback", () => {
       this.openFeedbackModal();
     });
 
     this.addCommand({
       id: "send-feedback",
-      name: "Send feedback to backlog",
+      name: "Send feedback",
       callback: () => this.openFeedbackModal(),
     });
 
@@ -359,45 +359,42 @@ export default class ClaudeTerminalPlugin extends Plugin {
 
   // ---- Feedback ----
 
-  /** Open the in-UI feedback modal, wired to append into the backlog note. */
+  /** Open the in-UI feedback modal, wired to file a GitHub issue in the feedback repo. */
   openFeedbackModal() {
+    if (!isFeedbackConfigured({ repo: this.settings.feedbackRepo, token: this.settings.feedbackToken })) {
+      new Notice("Feedback isn't set up: add a feedback repo and GitHub token in Claude Terminal settings.");
+      return;
+    }
     new FeedbackModal(this.app, (message, screenshots) => this.submitFeedback(message, screenshots)).open();
   }
 
   /**
-   * Persist a feedback submission into the backlog note (+ screenshots).
-   * The routing logic lives in persistFeedback; here we just adapt Obsidian's
-   * vault to its injected-deps interface.
+   * File a feedback submission (+ screenshots) as an issue in the feedback
+   * repo. The request logic lives in fileFeedbackIssue; here we inject
+   * Obsidian's CORS-free requestUrl and the install's metadata.
    */
-  async submitFeedback(message: string, screenshots: Uint8Array[]): Promise<void> {
-    const notePath = normalizePath(this.settings.feedbackNotePath);
-    await persistFeedback(
-      {
-        readFileIfExists: async (p) => {
-          const f = this.app.vault.getAbstractFileByPath(p);
-          return f instanceof TFile ? await this.app.vault.read(f) : null;
-        },
-        writeFile: async (p, data) => {
-          const f = this.app.vault.getAbstractFileByPath(p);
-          if (f instanceof TFile) await this.app.vault.modify(f, data);
-          else await this.app.vault.create(p, data);
-        },
-        writeBinary: async (p, data) => {
-          await this.app.vault.createBinary(normalizePath(p), data);
-        },
-        ensureFolder: (p) => this.ensureFolder(normalizePath(p)),
+  async submitFeedback(message: string, screenshots: Uint8Array[]): Promise<string> {
+    const filed = await fileFeedbackIssue(
+      async (req) => {
+        const res = await requestUrl({ ...req, throw: false });
+        let json: unknown = null;
+        try { json = res.json; } catch { /* non-JSON error body */ }
+        return { status: res.status, json };
       },
-      { message, screenshots, dateStr: moment().format("YYYY-MM-DD"), stamp: Date.now(), notePath }
+      { repo: this.settings.feedbackRepo, token: this.settings.feedbackToken },
+      {
+        message,
+        screenshots,
+        stamp: Date.now(),
+        meta: {
+          pluginVersion: this.manifest.version,
+          vaultName: this.app.vault.getName(),
+          platform: process.platform,
+          dateStr: moment().format("YYYY-MM-DD"),
+        },
+      }
     );
-  }
-
-  private async ensureFolder(dir: string): Promise<void> {
-    if (!dir || dir === "." || this.app.vault.getAbstractFileByPath(dir)) return;
-    try {
-      await this.app.vault.createFolder(dir);
-    } catch {
-      // Folder was created concurrently or already exists — safe to ignore.
-    }
+    return `Feedback filed as issue #${filed.number}. Thank you!`;
   }
 
   // ---- Highlights ----
