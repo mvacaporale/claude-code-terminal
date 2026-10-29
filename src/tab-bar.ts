@@ -106,6 +106,7 @@ export class TerminalTabBar {
       }
 
       const nameSpan = tab.createSpan({ cls: "claude-terminal-tab-name", text: session.name });
+      nameSpan.title = session.name; // full name when the label is truncated
 
       // Click timer: single click = switch, double click = rename
       nameSpan.addEventListener("click", (e) => {
@@ -248,10 +249,18 @@ export class TerminalTabBar {
       this.host.onSendFeedback();
     });
 
-    // Restore scroll position
+    // Restore scroll position, then make sure the active tab is visible
     if (savedScrollLeft > 0) {
       tabsScroll.scrollLeft = savedScrollLeft;
     }
+    tabsScroll.querySelector(".claude-terminal-tab.is-active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+
+    // Tabs keep their width and the strip scrolls; let a plain mouse wheel scroll it sideways
+    tabsScroll.addEventListener("wheel", (e) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      tabsScroll.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }, { passive: false });
   }
 
   private startRenameTab(sessionId: string, nameSpan: HTMLElement) {

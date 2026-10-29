@@ -446,8 +446,8 @@
   position: relative;
   border-top: 2px solid transparent;
   border-bottom: 2px solid transparent;
-  flex-shrink: 1;
-  min-width: 60px;
+  /* Don't squeeze tabs to unreadable widths; the strip scrolls instead */
+  flex-shrink: 0;
   max-width: 180px;
   transition: color 120ms ease, border-color 120ms ease;
 }
