@@ -9,17 +9,28 @@ import {
 } from "../src/feedback-github";
 
 const meta = { pluginVersion: "1.2.0", vaultName: "Lodestone", platform: "darwin", dateStr: "2026-10-23" };
-const target = { repo: "mvacaporale/claude-code-terminal-feedback", token: "tok" };
+const target = { repo: "mvacaporale/claude-code-terminal", token: "tok" };
 
 /** Fake GitHub API at the HTTP boundary; records every request. */
-function fakeGitHub(overrides: Partial<Record<"PUT" | "POST", { status: number; json: any }>> = {}) {
+function fakeGitHub(
+  overrides: Partial<Record<"PUT" | "POST", { status: number; json: any }>> = {},
+  { branchExists = true } = {}
+) {
   const calls: HttpRequest[] = [];
+  const api = `https://api.github.com/repos/${target.repo}`;
   const http: HttpFn = async (req) => {
     calls.push(req);
+    if (req.method === "GET") {
+      if (req.url === api) return { status: 200, json: { default_branch: "main" } };
+      if (req.url.endsWith("/heads/main")) return { status: 200, json: { object: { sha: "abc" } } };
+      return branchExists ? { status: 200, json: {} } : { status: 404, json: { message: "Not Found" } };
+    }
+    if (req.url.endsWith("/git/refs")) return { status: 201, json: {} };
     if (overrides[req.method]) return overrides[req.method]!;
     if (req.method === "PUT") {
       const path = req.url.split("/contents/")[1];
-      return { status: 201, json: { content: { html_url: `https://github.com/${target.repo}/blob/main/${path}` } } };
+      const branch = JSON.parse(req.body!).branch;
+      return { status: 201, json: { content: { html_url: `https://github.com/${target.repo}/blob/${branch}/${path}` } } };
     }
     return { status: 201, json: { number: 7, html_url: `https://github.com/${target.repo}/issues/7` } };
   };
@@ -62,12 +73,12 @@ describe("fileFeedbackIssue", () => {
     const [req] = gh.calls;
     expect(req.url).toBe(`https://api.github.com/repos/${target.repo}/issues`);
     expect(req.headers.Authorization).toBe("Bearer tok");
-    const payload = JSON.parse(req.body);
+    const payload = JSON.parse(req.body!);
     expect(payload.title).toBe("add a shortcut");
-    expect(payload.labels).toEqual(["feedback", "claude-code-terminal"]);
+    expect(payload.labels).toEqual(["feedback"]);
   });
 
-  it("commits screenshots first and embeds them", async () => {
+  it("commits screenshots to the side branch first and embeds them", async () => {
     const gh = fakeGitHub();
     await fileFeedbackIssue(gh.http, target, {
       message: "look",
@@ -75,11 +86,26 @@ describe("fileFeedbackIssue", () => {
       stamp: 99,
       meta,
     });
-    expect(gh.calls.map((c) => c.method)).toEqual(["PUT", "PUT", "POST"]);
-    expect(gh.calls[0].url).toContain("/contents/screenshots/claude-code-terminal/99-1.png");
-    expect(JSON.parse(gh.calls[0].body).content).toBe(Buffer.from([1, 2, 3]).toString("base64"));
-    const body = JSON.parse(gh.calls[2].body).body;
-    expect(body).toContain("screenshots/claude-code-terminal/99-2.png?raw=true");
+    expect(gh.calls.map((c) => c.method)).toEqual(["GET", "PUT", "PUT", "POST"]);
+    expect(gh.calls[1].url).toContain("/contents/screenshots/99-1.png");
+    const put = JSON.parse(gh.calls[1].body!);
+    expect(put.content).toBe(Buffer.from([1, 2, 3]).toString("base64"));
+    expect(put.branch).toBe("feedback-screenshots");
+    const body = JSON.parse(gh.calls[3].body!).body;
+    expect(body).toContain("blob/feedback-screenshots/screenshots/99-2.png?raw=true");
+  });
+
+  it("creates the screenshot branch from the default branch when missing", async () => {
+    const gh = fakeGitHub({}, { branchExists: false });
+    await fileFeedbackIssue(gh.http, target, { message: "x", screenshots: [new Uint8Array([1])], stamp: 1, meta });
+    const create = gh.calls.find((c) => c.url.endsWith("/git/refs"))!;
+    expect(JSON.parse(create.body!)).toEqual({ ref: "refs/heads/feedback-screenshots", sha: "abc" });
+  });
+
+  it("skips branch calls when there are no screenshots", async () => {
+    const gh = fakeGitHub({}, { branchExists: false });
+    await fileFeedbackIssue(gh.http, target, { message: "x", screenshots: [], stamp: 1, meta });
+    expect(gh.calls.map((c) => c.method)).toEqual(["POST"]);
   });
 
   it("surfaces GitHub's error message", async () => {

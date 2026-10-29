@@ -104,7 +104,7 @@ Open Settings > Claude Terminal:
 | Font size | Terminal font size | 13px |
 | Remote host | SSH destination for remote sessions | Empty (disabled) |
 | Remote working directory | Directory Claude runs in on the remote | Empty |
-| Feedback repo | `owner/name` of the private repo feedback is filed into | Empty (feedback off) |
+| Feedback repo | `owner/name` of the private repo feedback is filed into | `mvacaporale/claude-code-terminal` |
 | Feedback GitHub token | Fine-grained token for that repo only | Empty (feedback off) |
 
 ## Remote Sessions
@@ -125,13 +125,12 @@ You can run Claude Code on a remote machine (e.g. an always-on server holding a 
 
 ## Feedback
 
-The speech-bubble button (tab bar, ribbon, or the *Send feedback* command) opens a box for a note plus up to three screenshots. Each submission becomes a GitHub issue in a repo you own, labelled `feedback` and `claude-code-terminal`, with screenshots committed under `screenshots/claude-code-terminal/` in that repo. Nothing is written to the vault.
+The speech-bubble button (tab bar, ribbon, or the *Send feedback* command) opens a box for a note plus up to three screenshots. Each submission becomes a GitHub issue labelled `feedback` in this (private) repo. Screenshots are committed to the `feedback-screenshots` branch (created on first use) so `main`, which the Mac auto-pulls, stays clean. Nothing is written to the vault.
 
-Feedback is off until both settings are filled in, so other people running this plugin can't file into your inbox. To set it up:
+Feedback is off until a token is set. To set it up:
 
-1. Create a **private** repo for the inbox (this plugin's repo is a public fork, so its own issues would be public), e.g. `you/claude-code-terminal-feedback`.
-2. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with access to **only** that repo and the permissions *Issues: Read and write* and *Contents: Read and write*.
-3. Paste the repo and token into *Settings > Claude Terminal*. The token is stored in the plugin's `data.json`.
+1. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with access to **only** this repo and the permissions *Issues: Read and write* and *Contents: Read and write*.
+2. Paste it into *Settings > Claude Terminal > Feedback GitHub token*. It is stored in the plugin's `data.json`. *Feedback repo* defaults to `mvacaporale/claude-code-terminal`.
 
 If a send fails (offline, bad token), the box stays open with your text so you can retry.
 

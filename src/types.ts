@@ -116,7 +116,7 @@ export interface ClaudeTerminalSettings {
   persistedSessions: PersistedSession[];
   remoteHost: string;
   remoteVaultPath: string;
-  /** "owner/name" of the private repo that in-UI feedback is filed into as issues. */
+  /** "owner/name" of the repo that in-UI feedback is filed into as issues (this plugin's private repo). */
   feedbackRepo: string;
   /** Fine-grained GitHub token with Issues + Contents write on feedbackRepo only. Empty = feedback off. */
   feedbackToken: string;
@@ -146,7 +146,7 @@ export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   persistedSessions: [],
   remoteHost: "",
   remoteVaultPath: "",
-  feedbackRepo: "",
+  feedbackRepo: "mvacaporale/claude-code-terminal",
   feedbackToken: "",
   vaultData: {},
 };

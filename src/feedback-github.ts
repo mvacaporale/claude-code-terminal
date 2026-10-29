@@ -1,20 +1,21 @@
 /**
- * Files in-UI feedback as a GitHub issue in a repo the owner controls
- * (a private companion repo, since this plugin's own repo is a public fork).
- * Only an install holding a token with write access to that repo can file,
- * so other people running the plugin can't reach the inbox. Kept free of
- * Obsidian imports so it can be unit-tested; main.ts injects `requestUrl`.
+ * Files in-UI feedback as a GitHub issue in the plugin's own (private) repo.
+ * Only an install holding a token with write access to that repo can file.
+ * Screenshots go on a side branch so main, which the Mac auto-pulls, stays
+ * clean. Kept free of Obsidian imports so it can be unit-tested; main.ts
+ * injects `requestUrl`.
  */
 
 export const FEEDBACK_LABEL = "feedback";
 export const FEEDBACK_SOURCE = "claude-code-terminal";
+export const SCREENSHOT_BRANCH = "feedback-screenshots";
 const TITLE_MAX = 72;
 
 export interface HttpRequest {
   url: string;
-  method: "POST" | "PUT";
+  method: "GET" | "POST" | "PUT";
   headers: Record<string, string>;
-  body: string;
+  body?: string;
 }
 
 export interface HttpResponse {
@@ -78,9 +79,28 @@ function apiError(what: string, res: HttpResponse): Error {
   return new Error(`GitHub ${what} failed (${res.status}${detail})`);
 }
 
+/** Create the screenshot branch from the default branch's head if it doesn't exist yet. */
+async function ensureScreenshotBranch(http: HttpFn, api: string, h: Record<string, string>): Promise<void> {
+  const ref = await http({ url: `${api}/git/ref/heads/${SCREENSHOT_BRANCH}`, method: "GET", headers: h });
+  if (ref.status === 200) return;
+  if (ref.status !== 404) throw apiError("branch lookup", ref);
+  const repo = await http({ url: api, method: "GET", headers: h });
+  if (repo.status !== 200) throw apiError("repo lookup", repo);
+  const base = await http({ url: `${api}/git/ref/heads/${repo.json.default_branch}`, method: "GET", headers: h });
+  if (base.status !== 200) throw apiError("branch lookup", base);
+  const made = await http({
+    url: `${api}/git/refs`,
+    method: "POST",
+    headers: h,
+    body: JSON.stringify({ ref: `refs/heads/${SCREENSHOT_BRANCH}`, sha: base.json.object.sha }),
+  });
+  // 422 = created concurrently by another submit; fine.
+  if (made.status !== 201 && made.status !== 422) throw apiError("branch create", made);
+}
+
 /**
- * Commit each screenshot under `screenshots/<source>/`, then open one issue
- * labelled `feedback` + the source tool. Returns the new issue's number/URL.
+ * Commit each screenshot to the screenshot branch, then open one issue
+ * labelled `feedback`. Returns the new issue's number/URL.
  */
 export async function fileFeedbackIssue(
   http: HttpFn,
@@ -92,8 +112,9 @@ export async function fileFeedbackIssue(
   const h = headers(target.token);
 
   const shotUrls: string[] = [];
+  if (input.screenshots.length > 0) await ensureScreenshotBranch(http, api, h);
   for (let i = 0; i < input.screenshots.length; i++) {
-    const path = `screenshots/${FEEDBACK_SOURCE}/${input.stamp}-${i + 1}.png`;
+    const path = `screenshots/${input.stamp}-${i + 1}.png`;
     const res = await http({
       url: `${api}/contents/${path}`,
       method: "PUT",
@@ -101,6 +122,7 @@ export async function fileFeedbackIssue(
       body: JSON.stringify({
         message: `Feedback screenshot ${input.stamp}-${i + 1}`,
         content: Buffer.from(input.screenshots[i]).toString("base64"),
+        branch: SCREENSHOT_BRANCH,
       }),
     });
     if (res.status !== 201 && res.status !== 200) throw apiError("screenshot upload", res);
@@ -115,7 +137,7 @@ export async function fileFeedbackIssue(
     body: JSON.stringify({
       title: feedbackTitle(input.message),
       body: feedbackBody(input.message, shotUrls, input.meta),
-      labels: [FEEDBACK_LABEL, FEEDBACK_SOURCE],
+      labels: [FEEDBACK_LABEL],
     }),
   });
   if (res.status !== 201) throw apiError("issue create", res);
