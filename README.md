@@ -199,7 +199,18 @@ pulls `main` and rebuilds. Each time Obsidian launches or reloads, the plugin ru
 notice says to reload Obsidian once more to use it. It only updates when the checkout is on `main`
 with no local changes (otherwise it logs "skipping"). Log: `~/Library/Logs/claude-code-terminal-autoupdate.log`.
 
-### Project Structure
+### Screenshots without a Mac
+
+`npm run screenshot` runs the plugin in a real Obsidian on Linux, headless, and saves PNGs to
+`screenshots/` (gitignored). It downloads the Obsidian AppImage once (cached in
+`~/.cache/obsidian-screenshot`), builds the plugin and node-pty, opens a throwaway vault with the
+plugin enabled and a stub `claude` on PATH, then drives the UI with Playwright over the DevTools port.
+The default scenario (`scripts/screenshot-scenario.mjs`) shoots one tab, two tabs, side by side, and
+the tab menu; copy it and pass `--scenario path/to/yours.mjs` to shoot something else (`--out DIR`
+changes the output folder). Needs Xvfb, Playwright, a C++ toolchain, and network access to GitHub
+releases. node-pty is built against Node's own headers, which works because it uses N-API, so the
+Electron headers aren't needed.
+
 
 ```
 claude-terminal/
@@ -208,6 +219,7 @@ claude-terminal/
 │   ├── feedback-modal.ts   # Feedback box (text + screenshots)
 │   ├── feedback-github.ts  # Files feedback as a GitHub issue
 │   └── …                   # Terminal, sessions, highlights, threads
+├── scripts/            # Mac auto-update, headless screenshots
 ├── tests/              # vitest unit tests (npm test)
 ├── manifest.json       # Obsidian plugin manifest
 ├── package.json        # Dependencies & scripts

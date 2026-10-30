@@ -37,3 +37,6 @@ SESSION_NOTES.md
 
 # Claude Code local settings/worktrees
 .claude/
+
+# Headless UI screenshots (npm run screenshot)
+screenshots/

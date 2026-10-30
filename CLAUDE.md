@@ -11,6 +11,7 @@ Obsidian plugin (Michaelangelo's public fork; display name "Claude Obsidian Plug
 npm install --legacy-peer-deps   # plain install trips an npm peer-set bug
 npm test                         # vitest
 npm run build                    # tsc + production bundle
+npm run screenshot               # headless Obsidian on Linux -> screenshots/*.png
 ```
 CI (`.github/workflows/ci.yml`) runs tests and the build on every PR and push to `main`.
 
@@ -26,5 +27,6 @@ Merge to `main`. The Mac's checkout self-updates on Obsidian launch (`scripts/ma
 `src/agent-links.ts`: token-gated `obsidian://claude-new-tab` and `obsidian://claude-feedback` handlers plus the vault skill (`SKILL_MD`) the plugin installs on load. Change the skill text there, not in the vault.
 
 ## Conventions
+- UI changes get screenshots by default: run `npm run screenshot` (add a scenario in `scripts/` when the default one doesn't show the change), look at the PNGs, and share them with Michaelangelo along with the PR. Don't commit the PNGs.
 - Never commit `main.js`, `data.json` or tokens.
 - Keep README.md current when settings, commands or behavior change.

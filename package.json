@@ -7,7 +7,8 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit && node esbuild.config.mjs production",
     "rebuild:electron": "electron-rebuild -f -w node-pty -v 37.10.2",
-    "test": "vitest run"
+    "test": "vitest run",
+    "screenshot": "node scripts/screenshot.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
