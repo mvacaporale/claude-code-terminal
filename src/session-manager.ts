@@ -408,7 +408,6 @@ export class TerminalSessionManager {
       const slot = shown.indexOf(s.id);
       s.container.style.display = slot >= 0 ? "flex" : "none";
       s.container.style.order = slot >= 0 ? String(slot) : "";
-      s.container.toggleClass("is-split-active", !!this.split && s.id === this.activeSessionId);
       s.container.toggleClass("is-split-right", slot === 1);
     });
     this.sessionsContainer.toggleClass("is-split", !!this.split);

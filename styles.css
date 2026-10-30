@@ -650,7 +650,7 @@
   position: relative;
 }
 
-/* Side by side: two tabs in one row, the focused one marked with an accent edge */
+/* Side by side: two tabs in one row; the tab bar shows which one is active */
 .claude-terminal-sessions-container.is-split {
   display: flex;
   flex-direction: row;
@@ -660,15 +660,10 @@
   flex: 1 1 0;
   width: auto;
   min-width: 0;
-  border-top: 2px solid transparent;
 }
 
 .claude-terminal-sessions-container.is-split > .claude-terminal-session.is-split-right {
   border-left: 1px solid var(--background-modifier-border);
-}
-
-.claude-terminal-sessions-container.is-split > .claude-terminal-session.is-split-active {
-  border-top-color: var(--interactive-accent);
 }
 
 .claude-terminal-tab.is-split:not(.is-active) {
