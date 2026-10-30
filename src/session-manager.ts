@@ -21,6 +21,7 @@ import { cleanCopyText, normalizeCssColor, openExternalLink } from "./text-utils
 import { buildLocalLaunchCommand } from "./launch-command";
 import { pastedImagePath, pickPastedImage } from "./image-paste";
 import type ClaudeTerminalPlugin from "./main";
+import { RECEIPT_ENV, TOKEN_ENV } from "./agent-links";
 
 type NodePtyModule = typeof import("node-pty");
 
@@ -602,6 +603,9 @@ export class TerminalSessionManager {
           ...process.env,
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
+          // Lets the agent open obsidian://claude-new-tab and claude-feedback links (agent-links.ts).
+          [TOKEN_ENV]: this.plugin.settings.agentToken,
+          [RECEIPT_ENV]: this.plugin.agentReceiptPath(),
         },
       });
 

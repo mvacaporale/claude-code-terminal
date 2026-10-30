@@ -218,7 +218,7 @@ export class ReviewConsoleView extends ItemView {
     const prompt = this.buildPrompt(item);
     // Also copy the prompt so ⌘V is a fallback if the auto-submit timing is ever off.
     await this.copyToClipboard(prompt);
-    await this.plugin.openTerminalForReview(prompt);
+    await this.plugin.openTerminalWithPrompt(prompt);
     new Notice("Opening Claude with your review prompt…");
   }
 

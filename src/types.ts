@@ -120,6 +120,8 @@ export interface ClaudeTerminalSettings {
   feedbackRepo: string;
   /** Fine-grained GitHub token with Issues + Contents write on feedbackRepo only. Empty = feedback off. */
   feedbackToken: string;
+  /** Secret the in-terminal agent must put on obsidian:// links (see agent-links.ts). Generated on first load. */
+  agentToken: string;
   /** Per-vault slices keyed by vault base path; see VaultScopedData. */
   vaultData: Record<string, VaultScopedData>;
   /**
@@ -148,5 +150,6 @@ export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   remoteVaultPath: "",
   feedbackRepo: "mvacaporale/claude-code-terminal-feedback",
   feedbackToken: "",
+  agentToken: "",
   vaultData: {},
 };

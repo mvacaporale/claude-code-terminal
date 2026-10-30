@@ -26,13 +26,15 @@ import { renderThreadBlock, ThreadReadModal } from "./thread-block-view";
 import { FeedbackModal } from "./feedback-modal";
 import { fileFeedbackIssue, isFeedbackConfigured } from "./feedback-github";
 import { selfUpdate } from "./self-update";
+import * as crypto from "crypto";
+import { FEEDBACK_ACTION, NEW_TAB_ACTION, installSkill, parseFeedback, parseNewTab, writeLinkReceipt } from "./agent-links";
 
 export default class ClaudeTerminalPlugin extends Plugin {
   settings: ClaudeTerminalSettings = DEFAULT_SETTINGS;
   highlightNoteSync: HighlightNoteSync = new HighlightNoteSync(this);
   private floating: FloatingWindow = new FloatingWindow(this);
-  /** One-shot review prompt handed to the next terminal view's first session. */
-  private reviewSeed: string | null = null;
+  /** One-shot prompt (review or delegated task) handed to the next terminal view's first session. */
+  private promptSeed: { prompt: string; name?: string } | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -130,6 +132,23 @@ export default class ClaudeTerminalPlugin extends Plugin {
       void handleSaveThreads(this, params);
     });
 
+    // Let the in-terminal agent delegate work to a new tab or file feedback.
+    // Both require the install's secret token (in the pty env), so links from
+    // web pages or notes can't trigger them. The vault skill teaches the agent.
+    this.registerObsidianProtocolHandler(NEW_TAB_ACTION, (params) => {
+      const parsed = parseNewTab(params, this.settings.agentToken);
+      if (!parsed.ok) {
+        writeLinkReceipt(this.agentReceiptPath(), { ok: false, action: NEW_TAB_ACTION, reason: parsed.reason });
+        return;
+      }
+      void this.openTerminalWithPrompt(parsed.value.prompt, parsed.value.name);
+      writeLinkReceipt(this.agentReceiptPath(), { ok: true, action: NEW_TAB_ACTION, name: parsed.value.name ?? null });
+    });
+    this.registerObsidianProtocolHandler(FEEDBACK_ACTION, (params) => {
+      void this.handleFeedbackLink(params);
+    });
+    installSkill(this.getVaultPath());
+
     // Render saved-thread blocks in notes into a reopen panel.
     this.registerMarkdownCodeBlockProcessor("claude-threads", (source, el) => {
       renderThreadBlock(this, source, el);
@@ -192,6 +211,11 @@ export default class ClaudeTerminalPlugin extends Plugin {
     const prunedHistory = this.settings.sessionHistory.filter(e => !isAutoSessionName(e.name));
     if (prunedHistory.length !== this.settings.sessionHistory.length) {
       this.settings.sessionHistory = prunedHistory;
+      migrated = true;
+    }
+
+    if (!this.settings.agentToken) {
+      this.settings.agentToken = crypto.randomBytes(16).toString("hex");
       migrated = true;
     }
 
@@ -330,31 +354,61 @@ export default class ClaudeTerminalPlugin extends Plugin {
     }
   }
 
-  /** Consume the one-shot review prompt (terminal view calls this on open). */
-  consumeReviewSeed(): string | null {
-    const seed = this.reviewSeed;
-    this.reviewSeed = null;
+  /** Consume the one-shot prompt seed (terminal view calls this on open). */
+  consumePromptSeed(): { prompt: string; name?: string } | null {
+    const seed = this.promptSeed;
+    this.promptSeed = null;
     return seed;
   }
 
   /**
-   * Open a fresh Claude terminal session for a review and auto-submit `reviewInput`.
+   * Open a fresh Claude terminal session and auto-submit `prompt` (a review, or a
+   * task the agent delegated via obsidian://claude-new-tab).
    * Deliberately does NOT use openInCenter/openInSidebar — those detachLeavesOfType()
    * first, which would kill any running terminal sessions. If a terminal is already
-   * open we add a review session to it; otherwise we stash a one-shot seed so the new
-   * view opens straight into a single fresh review session (no restore, no empty tab).
+   * open we add a session to it; otherwise we stash a one-shot seed so the new
+   * view opens straight into a single fresh session (no restore, no empty tab).
    */
-  async openTerminalForReview(reviewInput: string) {
+  async openTerminalWithPrompt(prompt: string, name?: string) {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_TERMINAL);
     if (leaves.length > 0) {
       await this.app.workspace.revealLeaf(leaves[0]);
-      (leaves[0].view as ClaudeTerminalView).createSession(undefined, reviewInput);
+      (leaves[0].view as ClaudeTerminalView).createSession(name, prompt);
       return;
     }
-    this.reviewSeed = reviewInput;
+    if (this.floating.isVisible && this.floating.manager) {
+      this.floating.createSession(name, prompt);
+      return;
+    }
+    this.promptSeed = { prompt, name };
     const leaf = this.app.workspace.getLeaf("tab");
     await leaf.setViewState({ type: VIEW_TYPE_CLAUDE_TERMINAL, active: true });
     await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /** Receipt file the agent reads after opening a link (path is in its env). */
+  agentReceiptPath(): string {
+    return path.join(os.tmpdir(), "claude-obsidian-receipt.json");
+  }
+
+  private async handleFeedbackLink(params: Record<string, string | undefined>) {
+    const receipt = this.agentReceiptPath();
+    const parsed = parseFeedback(params, this.settings.agentToken);
+    if (!parsed.ok) {
+      writeLinkReceipt(receipt, { ok: false, action: FEEDBACK_ACTION, reason: parsed.reason });
+      return;
+    }
+    if (!isFeedbackConfigured({ repo: this.settings.feedbackRepo, token: this.settings.feedbackToken })) {
+      writeLinkReceipt(receipt, { ok: false, action: FEEDBACK_ACTION, reason: "feedback repo or token not set in plugin settings" });
+      return;
+    }
+    try {
+      const filed = await this.fileFeedback(parsed.value.text, []);
+      writeLinkReceipt(receipt, { ok: true, action: FEEDBACK_ACTION, number: filed.number, url: filed.url });
+      new Notice(`Claude filed feedback as issue #${filed.number}.`);
+    } catch (err) {
+      writeLinkReceipt(receipt, { ok: false, action: FEEDBACK_ACTION, reason: String(err) });
+    }
   }
 
   // ---- Feedback ----
@@ -374,7 +428,12 @@ export default class ClaudeTerminalPlugin extends Plugin {
    * Obsidian's CORS-free requestUrl and the install's metadata.
    */
   async submitFeedback(message: string, screenshots: Uint8Array[]): Promise<string> {
-    const filed = await fileFeedbackIssue(
+    const filed = await this.fileFeedback(message, screenshots);
+    return `Feedback filed as issue #${filed.number}. Thank you!`;
+  }
+
+  private fileFeedback(message: string, screenshots: Uint8Array[]) {
+    return fileFeedbackIssue(
       async (req) => {
         const res = await requestUrl({ ...req, throw: false });
         let json: unknown = null;
@@ -394,7 +453,6 @@ export default class ClaudeTerminalPlugin extends Plugin {
         },
       }
     );
-    return `Feedback filed as issue #${filed.number}. Thank you!`;
   }
 
   // ---- Highlights ----
