@@ -650,6 +650,31 @@
   position: relative;
 }
 
+/* Side by side: two tabs in one row, the focused one marked with an accent edge */
+.claude-terminal-sessions-container.is-split {
+  display: flex;
+  flex-direction: row;
+}
+
+.claude-terminal-sessions-container.is-split > .claude-terminal-session {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  border-top: 2px solid transparent;
+}
+
+.claude-terminal-sessions-container.is-split > .claude-terminal-session.is-split-right {
+  border-left: 1px solid var(--background-modifier-border);
+}
+
+.claude-terminal-sessions-container.is-split > .claude-terminal-session.is-split-active {
+  border-top-color: var(--interactive-accent);
+}
+
+.claude-terminal-tab.is-split:not(.is-active) {
+  box-shadow: inset 0 -2px 0 var(--background-modifier-border-hover);
+}
+
 /* Padding lives on the session wrapper, NOT on .claude-terminal-session-content:
    the xterm fit addon measures its parent's computed height, which includes
    that element's own padding — padding there makes the terminal overflow. */

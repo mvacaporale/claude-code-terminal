@@ -96,6 +96,10 @@ When docked in the right sidebar, use the "..." menu for:
 - **Undock to floating window** - Return to floating mode
 - **Clear terminal** - Clear the screen
 
+## Side by side
+
+Show two tabs at once: click the columns button in the tab bar (pairs the current tab with its neighbour), or right-click any tab and choose **Open side by side**. Click into either pane to make it the active tab; picking a tab outside the pair swaps it into the active side. Click the button again, or right-click a paired tab and choose **Close side by side**, to go back to one tab.
+
 ## Configuration
 
 Open Settings > Claude Obsidian Plugin:

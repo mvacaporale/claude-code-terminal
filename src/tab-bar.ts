@@ -20,6 +20,11 @@ export interface TabBarHost {
   onToggleHighlight(): Promise<void>;
   getSessions(): Map<string, TerminalSession>;
   getActiveSessionId(): string | null;
+  /** Show this tab beside the active one. */
+  onSplit(id: string): void;
+  /** Back to one tab at a time. */
+  onUnsplit(): void;
+  isInSplit(id: string): boolean;
   getSettings(): ClaudeTerminalSettings;
   saveSettings(): Promise<void>;
 }
@@ -53,7 +58,7 @@ export class TerminalTabBar {
 
     sessions.forEach((session) => {
       const tab = tabsScroll.createDiv({
-        cls: `claude-terminal-tab ${session.id === activeSessionId ? "is-active" : ""}${session.isRestored ? " is-restored" : ""}${session.remote ? " is-remote" : ""}`,
+        cls: `claude-terminal-tab ${session.id === activeSessionId ? "is-active" : ""}${session.isRestored ? " is-restored" : ""}${session.remote ? " is-remote" : ""}${this.host.isInSplit(session.id) ? " is-split" : ""}`,
       });
       tab.draggable = true;
 
@@ -137,11 +142,28 @@ export class TerminalTabBar {
         }
       });
 
-      // Remote tabs: right-click menu with detach vs kill
-      if (session.remote) {
-        tab.addEventListener("contextmenu", (e) => {
-          e.preventDefault();
-          const menu = new Menu();
+      // Right-click: side by side, plus detach vs kill for remote tabs
+      tab.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        const menu = new Menu();
+        let items = 0;
+        if (this.host.isInSplit(session.id)) {
+          items++;
+          menu.addItem((item) =>
+            item.setTitle("Close side by side")
+              .setIcon("square")
+              .onClick(() => this.host.onUnsplit())
+          );
+        } else if (session.id !== activeSessionId) {
+          items++;
+          menu.addItem((item) =>
+            item.setTitle("Open side by side")
+              .setIcon("columns-2")
+              .onClick(() => this.host.onSplit(session.id))
+          );
+        }
+        if (session.remote) {
+          items++;
           menu.addItem((item) =>
             item.setTitle("Detach (close tab, keep running)")
               .setIcon("unplug")
@@ -153,9 +175,9 @@ export class TerminalTabBar {
               .setWarning(true)
               .onClick(() => this.host.onKillRemote(session.id))
           );
-          menu.showAtMouseEvent(e);
-        });
-      }
+        }
+        if (items > 0) menu.showAtMouseEvent(e);
+      });
 
       // Close button (only if more than 1 session)
       if (sessions.size > 1) {
@@ -184,6 +206,25 @@ export class TerminalTabBar {
       await this.host.onToggleHighlight();
       this.render();
     });
+
+    // Side-by-side toggle: pairs the active tab with its neighbour (right-click a tab to pick one)
+    const ids = Array.from(sessions.keys());
+    const splitOn = activeSessionId !== null && this.host.isInSplit(activeSessionId);
+    if (splitOn || ids.length > 1) {
+      const splitBtn = actionsWrapper.createDiv({
+        cls: `claude-terminal-tab-action${splitOn ? " is-active" : ""}`,
+        attr: { "aria-label": splitOn ? "Close side by side" : "Side by side" },
+      });
+      setIcon(splitBtn, "columns-2");
+      splitBtn.title = splitOn ? "Close side by side" : "Side by side (right-click a tab to choose which)";
+      splitBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (splitOn) return this.host.onUnsplit();
+        const i = activeSessionId ? ids.indexOf(activeSessionId) : -1;
+        const other = ids[i > 0 ? i - 1 : i + 1];
+        if (other) this.host.onSplit(other);
+      });
+    }
 
     // New tab button: click = local, shift+click = remote, right-click = menu
     const newBtn = actionsWrapper.createDiv({ cls: "claude-terminal-tab-action", attr: { "aria-label": "New session" } });
