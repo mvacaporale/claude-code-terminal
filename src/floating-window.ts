@@ -123,8 +123,8 @@ export class FloatingWindow {
     this.sessionManager = null;
   }
 
-  createSession() {
-    this.sessionManager?.createSession();
+  createSession(name?: string, initialInput?: string) {
+    this.sessionManager?.createSession(name, false, false, undefined, undefined, initialInput);
   }
 
   refreshTheme() {

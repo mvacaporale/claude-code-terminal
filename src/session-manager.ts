@@ -21,6 +21,8 @@ import { cleanCopyText, normalizeCssColor, openExternalLink } from "./text-utils
 import { buildLocalLaunchCommand } from "./launch-command";
 import { pastedImagePath, pickPastedImage } from "./image-paste";
 import type ClaudeTerminalPlugin from "./main";
+import { RECEIPT_ENV, TOKEN_ENV } from "./agent-links";
+import { SplitPair, dropFromSplit, inSplit, openSplit, switchInSplit } from "./split-layout";
 
 type NodePtyModule = typeof import("node-pty");
 
@@ -33,6 +35,8 @@ const electronRequire = (window as unknown as { require: NodeJS.Require }).requi
 export class TerminalSessionManager {
   private sessions: Map<string, TerminalSession> = new Map();
   private activeSessionId: string | null = null;
+  /** Two tabs shown side by side, or null for one tab at a time. */
+  private split: SplitPair | null = null;
   private sessionCounter = 0;
   private plugin: ClaudeTerminalPlugin;
   private tabBar: HTMLElement;
@@ -71,6 +75,9 @@ export class TerminalSessionManager {
       },
       getSessions: () => this.sessions,
       getActiveSessionId: () => this.activeSessionId,
+      onSplit: (id) => this.openSideBySide(id),
+      onUnsplit: () => this.closeSideBySide(),
+      isInSplit: (id) => inSplit(this.split, id),
       getSettings: () => this.plugin.settings,
       saveSettings: () => this.plugin.saveSettings(),
     });
@@ -320,10 +327,20 @@ export class TerminalSessionManager {
     this.sessions.set(id, session);
     this.highlighter.attachTerminalListeners(session);
 
-    // Set active state directly (avoid switchToSession's extra rAF + renderTabBar)
-    this.sessions.forEach(s => { s.container.style.display = "none"; });
-    session.container.style.display = "flex";
+    // Set active state directly (avoid switchToSession's extra rAF + renderTabBar).
+    // In side-by-side mode the new tab takes the active side.
+    this.split = switchInSplit(this.split, this.activeSessionId, id);
     this.activeSessionId = id;
+    this.applyLayout();
+
+    // Side by side: clicking into either pane makes it the active tab.
+    container.addEventListener("focusin", () => {
+      if (this.split && inSplit(this.split, id) && this.activeSessionId !== id) {
+        this.activeSessionId = id;
+        this.applyLayout();
+        this.renderTabBar();
+      }
+    });
 
     // Single rAF: fit, start PTY, focus, render tabs
     requestAnimationFrame(() => {
@@ -337,7 +354,7 @@ export class TerminalSessionManager {
     session.resizeObserver = new ResizeObserver(() => {
       if (session.fitDebounceTimer) clearTimeout(session.fitDebounceTimer);
       session.fitDebounceTimer = setTimeout(() => {
-        if (session.fitAddon && session.terminal && session.ptyProcess && this.activeSessionId === session.id) {
+        if (session.fitAddon && session.terminal && session.ptyProcess && this.isShown(session.id)) {
           session.fitAddon.fit();
         }
       }, 50);
@@ -351,25 +368,66 @@ export class TerminalSessionManager {
     const session = this.sessions.get(id);
     if (!session) return;
 
-    this.sessions.forEach(s => {
-      s.container.style.display = "none";
-    });
-
-    session.container.style.display = "flex";
+    this.split = switchInSplit(this.split, this.activeSessionId, id);
     this.activeSessionId = id;
+    this.applyLayout();
+    this.fitShown();
 
+    this.renderTabBar();
+  }
+
+  /** Show `id` beside the active tab. */
+  openSideBySide(id: string) {
+    const pair = openSplit(this.activeSessionId, id);
+    if (!pair || !this.sessions.has(id)) return;
+    this.split = pair;
+    this.activeSessionId = id;
+    this.applyLayout();
+    this.fitShown();
+    this.renderTabBar();
+  }
+
+  closeSideBySide() {
+    if (!this.split) return;
+    this.split = null;
+    this.applyLayout();
+    this.fitShown();
+    this.renderTabBar();
+  }
+
+  private isShown(id: string): boolean {
+    return this.split ? inSplit(this.split, id) : this.activeSessionId === id;
+  }
+
+  /** Show the active tab, or both tabs of the split in tab-bar order, and hide the rest. */
+  private applyLayout() {
+    const shown = this.split
+      ? Array.from(this.sessions.keys()).filter(id => inSplit(this.split, id))
+      : [this.activeSessionId];
+    this.sessions.forEach(s => {
+      const slot = shown.indexOf(s.id);
+      s.container.style.display = slot >= 0 ? "flex" : "none";
+      s.container.style.order = slot >= 0 ? String(slot) : "";
+      s.container.toggleClass("is-split-right", slot === 1);
+    });
+    this.sessionsContainer.toggleClass("is-split", !!this.split);
+  }
+
+  /** Refit every shown tab and focus the active one. */
+  private fitShown() {
     // Double rAF: first ensures display:flex is applied, second ensures layout is computed
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        session.fitAddon.fit();
-        session.terminal.scrollToBottom();
-        session.terminal.focus();
-        // Re-anchor pass deferred while the tab was hidden (zero cell dims)
-        this.highlighter.refreshOverlays(session);
+        this.sessions.forEach(session => {
+          if (!this.isShown(session.id)) return;
+          session.fitAddon.fit();
+          session.terminal.scrollToBottom();
+          if (session.id === this.activeSessionId) session.terminal.focus();
+          // Re-anchor pass deferred while the tab was hidden (zero cell dims)
+          this.highlighter.refreshOverlays(session);
+        });
       });
     });
-
-    this.renderTabBar();
   }
 
   closeSession(id: string) {
@@ -378,6 +436,8 @@ export class TerminalSessionManager {
 
     this.destroySession(session);
     this.sessions.delete(id);
+    const wasSplit = inSplit(this.split, id);
+    this.split = dropFromSplit(this.split, id);
 
     if (this.activeSessionId === id) {
       this.activeSessionId = null;
@@ -388,6 +448,9 @@ export class TerminalSessionManager {
         this.createSession();
         return;
       }
+    } else if (wasSplit) {
+      this.applyLayout();
+      this.fitShown();
     }
 
     this.renderTabBar();
@@ -439,6 +502,7 @@ export class TerminalSessionManager {
       newMap.set(sid, this.sessions.get(sid)!);
     }
     this.sessions = newMap;
+    if (this.split) this.applyLayout();
     this.renderTabBar();
     this.persistSessions();
   }
@@ -519,6 +583,7 @@ export class TerminalSessionManager {
     this.sessions.forEach(s => this.destroySession(s));
     this.sessions.clear();
     this.activeSessionId = null;
+    this.split = null;
     this.sessionCounter = 0;
     this.tabBar.empty();
   }
@@ -602,6 +667,9 @@ export class TerminalSessionManager {
           ...process.env,
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
+          // Lets the agent open obsidian://claude-new-tab and claude-feedback links (agent-links.ts).
+          [TOKEN_ENV]: this.plugin.settings.agentToken,
+          [RECEIPT_ENV]: this.plugin.agentReceiptPath(),
         },
       });
 

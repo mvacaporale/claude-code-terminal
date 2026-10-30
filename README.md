@@ -3,10 +3,12 @@ type: note
 tags: [obsidian-plugin, claude-code, terminal, ai-tools]
 context:
 last_edited: 2026-07-09
-summary: Documentation for the Claude Code Terminal Obsidian plugin, detailing installation, features, usage, and configuration for AI coding assistance.
+summary: Documentation for the Claude Obsidian Plugin (formerly Claude Code Terminal), detailing installation, features, usage, and configuration for AI coding assistance.
 ---
 
-# Claude Code Terminal
+# Claude Obsidian Plugin
+
+_Shown in Obsidian as "Claude Obsidian Plugin"; the plugin id, folder and repo are still `claude-code-terminal`._
 
 An embedded terminal plugin for Obsidian that integrates with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Anthropic's AI coding assistant.
 <img width="470" height="332" alt="Screenshot 2026-02-02 at 12 12 32 AM" src="https://github.com/user-attachments/assets/af19d945-8028-476d-bba8-9ace8b482ab9" />
@@ -94,9 +96,13 @@ When docked in the right sidebar, use the "..." menu for:
 - **Undock to floating window** - Return to floating mode
 - **Clear terminal** - Clear the screen
 
+## Side by side
+
+Show two tabs at once: click the columns button in the tab bar (pairs the current tab with its neighbour), or right-click any tab and choose **Open side by side**. Click into either pane to make it the active tab; picking a tab outside the pair swaps it into the active side. Click the button again, or right-click a paired tab and choose **Close side by side**, to go back to one tab.
+
 ## Configuration
 
-Open Settings > Claude Terminal:
+Open Settings > Claude Obsidian Plugin:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
@@ -132,9 +138,18 @@ Feedback is off until a token is set, so other people running this plugin can't 
 
 1. Create a private repo for the inbox, e.g. `you/claude-code-terminal-feedback`.
 2. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with access to **only** that repo and the permissions *Issues: Read and write* and *Contents: Read and write*.
-3. In *Settings > Claude Terminal*, set *Feedback repo* (defaults to `mvacaporale/claude-code-terminal-feedback`) and paste the token into *Feedback GitHub token*. The token is stored in the plugin's `data.json`.
+3. In *Settings > Claude Obsidian Plugin*, set *Feedback repo* (defaults to `mvacaporale/claude-code-terminal-feedback`) and paste the token into *Feedback GitHub token*. The token is stored in the plugin's `data.json`.
 
 If a send fails (offline, bad token), the box stays open with your text so you can retry.
+
+## Letting Claude drive the plugin
+
+Claude, running in a local tab, can open a new tab with a prompt (to hand off a task) or file feedback itself. On load the plugin installs a skill at `<vault>/.claude/skills/obsidian-terminal/SKILL.md` (overwritten when it changes) that teaches Claude two links:
+
+- `obsidian://claude-new-tab?token=…&name=…&prompt=…` opens a new tab, starts a fresh `claude` and submits the prompt.
+- `obsidian://claude-feedback?token=…&text=…` files the text as a feedback issue (needs the feedback token above).
+
+Each link must carry the install's secret token, generated once into `data.json` and passed to each tab as `$CLAUDE_TERMINAL_TOKEN`, so links on web pages or in notes can't trigger them. After each link the plugin writes a JSON receipt to `$CLAUDE_TERMINAL_RECEIPT` (`ok`, plus the issue `url` for feedback, or a `reason`). Tabs opened before this feature existed need a restart to get the token. Remote tabs don't have it.
 
 ## Claude Code Setup
 

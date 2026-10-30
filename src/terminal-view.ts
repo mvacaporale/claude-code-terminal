@@ -44,9 +44,9 @@ export class ClaudeTerminalView extends ItemView {
       this.manager = new TerminalSessionManager(this.plugin, tabBar, sessionsContainer, true);
       // A review launch stashes a one-shot prompt: open straight into a single fresh
       // review session (skip restore/auto-create) rather than restoring old tabs.
-      const seed = this.plugin.consumeReviewSeed();
+      const seed = this.plugin.consumePromptSeed();
       if (seed) {
-        this.manager.createSession(undefined, false, false, undefined, undefined, seed);
+        this.manager.createSession(seed.name, false, false, undefined, undefined, seed.prompt);
         return;
       }
       const restored = this.plugin.settings.restoreSessionsOnStartup
