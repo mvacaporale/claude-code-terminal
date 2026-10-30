@@ -104,10 +104,13 @@ const obsidian = spawn(
 );
 let stderr = "";
 obsidian.stderr.on("data", (d) => (stderr += d));
-const cleanup = () => {
+const cleanup = async () => {
+  // Obsidian keeps writing its config while it shuts down, so wait for it.
+  const exited = new Promise((r) => obsidian.once("exit", r));
   obsidian.kill();
+  await Promise.race([exited, sleep(5000)]);
   xvfb?.kill();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5 });
 };
 
 try {
@@ -147,5 +150,5 @@ try {
   console.log(shots.join("\n"));
   await browser.close().catch(() => {});
 } finally {
-  cleanup();
+  await cleanup();
 }
