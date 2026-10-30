@@ -1,5 +1,5 @@
 /**
- * Side-by-side layout: two tabs shown at once, left and right. The active tab
+ * Side-by-side layout: two tabs shown at once (on screen in tab-bar order). The active tab
  * is always one of the pair; picking a tab outside the pair swaps it into the
  * active side. Pure functions so vitest can cover the rules.
  */

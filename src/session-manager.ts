@@ -399,9 +399,11 @@ export class TerminalSessionManager {
     return this.split ? inSplit(this.split, id) : this.activeSessionId === id;
   }
 
-  /** Show the active tab, or both tabs of the split (left, right), and hide the rest. */
+  /** Show the active tab, or both tabs of the split in tab-bar order, and hide the rest. */
   private applyLayout() {
-    const shown = this.split ? [this.split.left, this.split.right] : [this.activeSessionId];
+    const shown = this.split
+      ? Array.from(this.sessions.keys()).filter(id => inSplit(this.split, id))
+      : [this.activeSessionId];
     this.sessions.forEach(s => {
       const slot = shown.indexOf(s.id);
       s.container.style.display = slot >= 0 ? "flex" : "none";
@@ -501,6 +503,7 @@ export class TerminalSessionManager {
       newMap.set(sid, this.sessions.get(sid)!);
     }
     this.sessions = newMap;
+    if (this.split) this.applyLayout();
     this.renderTabBar();
     this.persistSessions();
   }
