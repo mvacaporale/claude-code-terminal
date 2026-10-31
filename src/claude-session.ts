@@ -41,33 +41,39 @@ export function watchForClaudeSessionId(options: DetectOptions): void {
 }
 
 /**
- * Local detection: PID-based lookup first (child process →
- * ~/.claude/sessions/<pid>.json), then a fallback scan of the sessions
- * dir for files created after launch with a matching cwd. `isClaimed` marks
- * ids already held by other open tabs, which the fallback must skip.
+ * Local detection: the Claude process somewhere under this tab's shell writes
+ * ~/.claude/sessions/<pid>.json, and that file always names the conversation
+ * it is in right now (it changes on /clear and /resume). Only this tab's own
+ * process tree is searched: the old fallback took the newest session in the
+ * vault, which could belong to another tab or to a background job, and saved
+ * the tab under the wrong conversation.
  */
-export function makeLocalProbe(
-  shellPid: number,
-  vaultPath: string,
-  launchTime: number,
-  isClaimed: (sessionId: string) => boolean,
-): () => Promise<string | null> {
-  return async () =>
-    (await tryPidBased(shellPid)) ?? (await tryFallback(vaultPath, launchTime, isClaimed));
+export function makeLocalProbe(shellPid: number): () => Promise<string | null> {
+  return () => findSessionInTree(shellPid, pgrepChildren, readSessionIdForPid);
 }
 
 /**
- * Newest candidate not already held by another tab. Without the claim check,
- * tabs launched together (restore, "Reopen all") all grabbed the same newest
- * session, so one id ended up mapped to several tab names.
+ * Breadth-first search of `rootPid`'s descendants for the first process with
+ * a session file. Claude is not always a direct child of the shell (wrapper
+ * scripts, npx), so a few levels are walked.
  */
-export function pickFallbackSession(
-  candidates: { sessionId: string; startedAt: number }[],
-  isClaimed: (sessionId: string) => boolean,
-): string | null {
-  const free = candidates.filter(c => !isClaimed(c.sessionId));
-  free.sort((a, b) => b.startedAt - a.startedAt);
-  return free[0]?.sessionId ?? null;
+export async function findSessionInTree(
+  rootPid: number,
+  children: (pid: number) => Promise<string[]>,
+  readSessionId: (pid: string) => Promise<string | null>,
+  maxDepth = 4,
+): Promise<string | null> {
+  let level = await children(rootPid);
+  for (let depth = 1; depth <= maxDepth && level.length > 0; depth++) {
+    const next: string[] = [];
+    for (const pid of level) {
+      const sessionId = await readSessionId(pid);
+      if (sessionId) return sessionId;
+      next.push(...(await children(Number(pid))));
+    }
+    level = next;
+  }
+  return null;
 }
 
 function pgrepChildren(pid: number): Promise<string[]> {
@@ -80,7 +86,7 @@ function pgrepChildren(pid: number): Promise<string[]> {
   });
 }
 
-async function readSessionFile(filePath: string): Promise<{ sessionId?: string; startedAt?: number; cwd?: string } | null> {
+async function readSessionFile(filePath: string): Promise<{ sessionId?: string } | null> {
   try {
     return JSON.parse(await fsp.readFile(filePath, "utf-8"));
   } catch {
@@ -88,26 +94,7 @@ async function readSessionFile(filePath: string): Promise<{ sessionId?: string; 
   }
 }
 
-async function tryPidBased(shellPid: number): Promise<string | null> {
-  for (const pid of await pgrepChildren(shellPid)) {
-    const data = await readSessionFile(path.join(SESSIONS_DIR, `${pid}.json`));
-    if (data?.sessionId) return data.sessionId;
-  }
-  return null;
-}
-
-async function tryFallback(vaultPath: string, launchTime: number, isClaimed: (sessionId: string) => boolean): Promise<string | null> {
-  try {
-    const files = (await fsp.readdir(SESSIONS_DIR)).filter(f => f.endsWith(".json"));
-    const candidates: { sessionId: string; startedAt: number }[] = [];
-    for (const f of files) {
-      const data = await readSessionFile(path.join(SESSIONS_DIR, f));
-      if (data?.sessionId && data.startedAt && data.startedAt > launchTime && data.cwd?.startsWith(vaultPath)) {
-        candidates.push({ sessionId: data.sessionId, startedAt: data.startedAt });
-      }
-    }
-    return pickFallbackSession(candidates, isClaimed);
-  } catch {
-    return null;
-  }
+async function readSessionIdForPid(pid: string): Promise<string | null> {
+  const data = await readSessionFile(path.join(SESSIONS_DIR, `${pid}.json`));
+  return data?.sessionId ?? null;
 }
