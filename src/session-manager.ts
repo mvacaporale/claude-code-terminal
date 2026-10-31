@@ -26,6 +26,9 @@ import { SplitPair, dropFromSplit, inSplit, openSplit, switchInSplit } from "./s
 
 type NodePtyModule = typeof import("node-pty");
 
+/** How often an open local tab re-reads its Claude session id. */
+const SESSION_ID_REFRESH_MS = 15_000;
+
 const electronRequire = (window as unknown as { require: NodeJS.Require }).require;
 
 /**
@@ -216,6 +219,7 @@ export class TerminalSessionManager {
       resizeObserver: null,
       fitDebounceTimer: null,
       reanchorTimer: null,
+      idRefreshTimer: null,
       isRestored,
       userNamed,
     };
@@ -619,6 +623,7 @@ export class TerminalSessionManager {
     session.resizeObserver?.disconnect();
     if (session.fitDebounceTimer) clearTimeout(session.fitDebounceTimer);
     if (session.reanchorTimer) clearTimeout(session.reanchorTimer);
+    if (session.idRefreshTimer) clearInterval(session.idRefreshTimer);
     if (session.ptyProcess) {
       session.ptyProcess.kill();
     }
@@ -739,7 +744,7 @@ export class TerminalSessionManager {
     } else {
       const shellPid = session.ptyProcess?.pid;
       if (!shellPid) return;
-      probe = makeLocalProbe(shellPid, this.plugin.getVaultPath(), launchTime, id => this.isClaimedByOtherTab(session, id));
+      probe = makeLocalProbe(shellPid);
     }
 
     // For restored/resumed sessions, claudeSessionId holds the OLD id:
@@ -754,12 +759,28 @@ export class TerminalSessionManager {
         session.claudeSessionId !== null && session.claudeSessionId !== initialId,
       onDetected: (sessionId) => {
         if (sessionId === initialId) return; // stale read; keep polling
-        if (this.isClaimedByOtherTab(session, sessionId)) return; // another tab's session; keep polling
-        session.claudeSessionId = sessionId;
-        this.plugin.updateSessionHistoryId(session.name, sessionId);
-        this.persistSessions();
+        this.applyDetectedSessionId(session, sessionId);
       },
     });
+
+    // A local tab's conversation can change after launch (/clear, /resume),
+    // so keep following its session file for as long as the tab is open.
+    if (!session.remote) {
+      if (session.idRefreshTimer) clearInterval(session.idRefreshTimer);
+      session.idRefreshTimer = setInterval(() => {
+        void probe().then(sessionId => {
+          if (sessionId) this.applyDetectedSessionId(session, sessionId);
+        });
+      }, SESSION_ID_REFRESH_MS);
+    }
+  }
+
+  private applyDetectedSessionId(session: TerminalSession, sessionId: string) {
+    if (sessionId === session.claudeSessionId) return;
+    if (this.isClaimedByOtherTab(session, sessionId)) return; // another tab's session
+    session.claudeSessionId = sessionId;
+    this.plugin.updateSessionHistoryId(session.name, sessionId);
+    this.persistSessions();
   }
 
   /** True when a different open tab already owns this Claude session id. */

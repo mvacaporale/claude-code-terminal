@@ -60,6 +60,8 @@ export interface TerminalSession {
   resizeObserver: ResizeObserver | null;
   fitDebounceTimer: NodeJS.Timeout | null;
   reanchorTimer: NodeJS.Timeout | null;
+  /** Re-reads a local tab's Claude session id while the tab is open. */
+  idRefreshTimer: NodeJS.Timeout | null;
   isRestored: boolean;
   /** True when the tab carries a user-supplied name (rename/restore/fork/reopen);
    * false for auto-named "Session N" tabs. Only user-named sessions are persisted. */

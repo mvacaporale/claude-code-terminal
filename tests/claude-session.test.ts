@@ -1,23 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { pickFallbackSession } from "../src/claude-session";
+import { findSessionInTree } from "../src/claude-session";
 
-describe("pickFallbackSession", () => {
-  const candidates = [
-    { sessionId: "older", startedAt: 1 },
-    { sessionId: "newest", startedAt: 3 },
-    { sessionId: "middle", startedAt: 2 },
-  ];
+// A fake process tree: pid -> child pids, and pids that have a session file.
+function tree(edges: Record<number, string[]>, sessions: Record<string, string>) {
+  return {
+    children: async (pid: number) => edges[pid] ?? [],
+    readSessionId: async (pid: string) => sessions[pid] ?? null,
+  };
+}
 
-  it("picks the newest session when none is claimed", () => {
-    expect(pickFallbackSession(candidates, () => false)).toBe("newest");
+describe("findSessionInTree", () => {
+  it("finds Claude as a direct child of the tab's shell", async () => {
+    const t = tree({ 100: ["101"] }, { "101": "abc" });
+    expect(await findSessionInTree(100, t.children, t.readSessionId)).toBe("abc");
   });
 
-  it("skips sessions other tabs already hold", () => {
-    const claimed = new Set(["newest"]);
-    expect(pickFallbackSession(candidates, id => claimed.has(id))).toBe("middle");
+  it("finds Claude under a wrapper process", async () => {
+    const t = tree({ 100: ["101"], 101: ["102"] }, { "102": "wrapped" });
+    expect(await findSessionInTree(100, t.children, t.readSessionId)).toBe("wrapped");
   });
 
-  it("returns null when every candidate is claimed", () => {
-    expect(pickFallbackSession(candidates, () => true)).toBeNull();
+  it("never returns a session from outside the tab's own process tree", async () => {
+    // 200 is another tab or a background job; its session must not be picked.
+    const t = tree({ 100: ["101"], 200: ["201"] }, { "201": "someone-else" });
+    expect(await findSessionInTree(100, t.children, t.readSessionId)).toBeNull();
+  });
+
+  it("returns null when Claude isn't running in the tab", async () => {
+    const t = tree({}, {});
+    expect(await findSessionInTree(100, t.children, t.readSessionId)).toBeNull();
+  });
+
+  it("stops at the depth limit", async () => {
+    const t = tree({ 1: ["2"], 2: ["3"], 3: ["4"] }, { "4": "deep" });
+    expect(await findSessionInTree(1, t.children, t.readSessionId, 2)).toBeNull();
+    expect(await findSessionInTree(1, t.children, t.readSessionId, 3)).toBe("deep");
   });
 });
