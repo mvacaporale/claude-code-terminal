@@ -18,8 +18,15 @@ describe("buildLocalLaunchCommand", () => {
 
   it("ignores fork when there is no session id to fork from", () => {
     expect(buildLocalLaunchCommand({ ...base, resume: true, fork: true, claudeSessionId: null })).toBe(
-      "clear && claude --continue"
+      "clear && claude"
     );
+  });
+
+  it("starts fresh, not --continue, when resuming a tab with no recorded id", () => {
+    expect(buildLocalLaunchCommand({ ...base, resume: true, claudeSessionId: null })).toBe("clear && claude");
+    expect(
+      buildLocalLaunchCommand({ ...base, resume: true, claudeSessionId: null, isFirstSession: true })
+    ).toBe("clear && claude");
   });
 
   it("continues on the first session", () => {

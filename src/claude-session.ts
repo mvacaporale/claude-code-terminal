@@ -48,8 +48,8 @@ export function watchForClaudeSessionId(options: DetectOptions): void {
  * vault, which could belong to another tab or to a background job, and saved
  * the tab under the wrong conversation.
  */
-export function makeLocalProbe(shellPid: number): () => Promise<string | null> {
-  return () => findSessionInTree(shellPid, pgrepChildren, readSessionIdForPid);
+export function makeLocalProbe(shellPid: number, launchedAt: number): () => Promise<string | null> {
+  return () => findSessionInTree(shellPid, pgrepChildren, (pid) => readSessionIdForPid(pid, launchedAt));
 }
 
 /**
@@ -86,7 +86,30 @@ function pgrepChildren(pid: number): Promise<string[]> {
   });
 }
 
-async function readSessionFile(filePath: string): Promise<{ sessionId?: string } | null> {
+interface SessionFile {
+  sessionId?: unknown;
+  kind?: unknown;
+  startedAt?: unknown;
+}
+
+/** Slack for clock skew between the tab's launch and Claude's own startedAt. */
+const STARTED_AT_SLACK_MS = 5000;
+
+/**
+ * Whether a session file belongs to the tab's own interactive Claude.
+ * Background jobs, SDK runs (`claude -p` from hooks or scripts) and stale files
+ * left behind by a killed process whose pid was later reused all write
+ * session files too; taking their id saves the tab under someone else's
+ * conversation.
+ */
+export function sessionIdFromFile(data: SessionFile | null, launchedAt: number): string | null {
+  if (!data || typeof data.sessionId !== "string" || !data.sessionId) return null;
+  if (data.kind !== undefined && data.kind !== "interactive") return null;
+  if (typeof data.startedAt === "number" && data.startedAt < launchedAt - STARTED_AT_SLACK_MS) return null;
+  return data.sessionId;
+}
+
+async function readSessionFile(filePath: string): Promise<SessionFile | null> {
   try {
     return JSON.parse(await fsp.readFile(filePath, "utf-8"));
   } catch {
@@ -94,7 +117,6 @@ async function readSessionFile(filePath: string): Promise<{ sessionId?: string }
   }
 }
 
-async function readSessionIdForPid(pid: string): Promise<string | null> {
-  const data = await readSessionFile(path.join(SESSIONS_DIR, `${pid}.json`));
-  return data?.sessionId ?? null;
+async function readSessionIdForPid(pid: string, launchedAt: number): Promise<string | null> {
+  return sessionIdFromFile(await readSessionFile(path.join(SESSIONS_DIR, `${pid}.json`)), launchedAt);
 }
