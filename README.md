@@ -28,6 +28,7 @@ An embedded terminal plugin for Obsidian that integrates with [Claude Code](http
 - **Resizable & Draggable**: Floating window can be positioned and resized
 - **Full PTY Support**: Real terminal emulation via node-pty
 - **Paste screenshots**: <kbd>Cmd+V</kbd> with an image on the clipboard saves it to a temp file and pastes its path, which Claude Code attaches as an image (local tabs only)
+- **Reopen closed tabs**: the clock button lists your last 10 closed tabs (named or not) under *Recently closed*; click one to resume that Claude session
 
 ## Requirements
 

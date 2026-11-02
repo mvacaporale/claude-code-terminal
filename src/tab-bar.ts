@@ -1,5 +1,6 @@
 import { Menu, Notice, setIcon } from "obsidian";
-import type { ClaudeTerminalSettings, RemoteInfo, SessionHistoryEntry, TerminalSession } from "./types";
+import type { ClaudeTerminalSettings, ClosedSessionEntry, RemoteInfo, SessionHistoryEntry, TerminalSession } from "./types";
+import { formatClosedAgo, removeClosedSession } from "./session-history";
 
 /**
  * Narrow interface the tab bar uses to talk back to its owner
@@ -271,7 +272,8 @@ export class TerminalTabBar {
     });
 
     // History button
-    if (this.host.getSettings().sessionHistory.length > 0) {
+    const hostSettings = this.host.getSettings();
+    if (hostSettings.sessionHistory.length > 0 || (hostSettings.recentlyClosed?.length ?? 0) > 0) {
       const historyBtn = actionsWrapper.createDiv({ cls: "claude-terminal-tab-action", attr: { "aria-label": "Recent sessions" } });
       setIcon(historyBtn, "clock");
       historyBtn.title = "Open recent session";
@@ -349,7 +351,14 @@ export class TerminalTabBar {
       if (seen.size >= 15) break;
     }
 
-    if (entries.length === 0) {
+    // Recently closed tabs (named or not), newest first, skipping ones already open.
+    const openIds = new Set(Array.from(this.host.getSessions().values()).map(s => s.claudeSessionId).filter(Boolean));
+    const closed: ClosedSessionEntry[] = (settings.recentlyClosed ?? [])
+      .filter(e => !(e.sessionId && openIds.has(e.sessionId)))
+      .slice()
+      .reverse();
+
+    if (entries.length === 0 && closed.length === 0) {
       new Notice("No session history yet");
       return;
     }
@@ -361,6 +370,36 @@ export class TerminalTabBar {
     dropdown.style.right = `${window.innerWidth - rect.right}px`;
     dropdown.style.top = `${rect.bottom + 4}px`;
     dropdown.style.zIndex = "10000";
+
+    const sectionLabel = (text: string) =>
+      dropdown.createDiv({ cls: "claude-terminal-history-section", text });
+
+    if (closed.length > 0) {
+      sectionLabel("Recently closed");
+      const now = Date.now();
+      for (const entry of closed) {
+        const row = dropdown.createDiv({ cls: `claude-terminal-history-item is-closed${entry.remote ? " is-remote" : ""}` });
+        if (entry.remote) {
+          const remoteIcon = row.createSpan({ cls: "claude-terminal-history-remote-icon" });
+          setIcon(remoteIcon, "server");
+          remoteIcon.title = `Remote session on ${entry.remote.host}`;
+        }
+        const nameEl = row.createSpan({ cls: "claude-terminal-history-name", text: entry.name });
+        row.createSpan({ cls: "claude-terminal-history-meta", text: formatClosedAgo(entry.closedAt, now) });
+        row.title = "Reopen this tab";
+        const reopen = () => {
+          this.closeHistoryMenu();
+          const s = this.host.getSettings();
+          s.recentlyClosed = removeClosedSession(s.recentlyClosed ?? [], entry);
+          void this.host.saveSettings();
+          // Auto-named tabs come back under a fresh "Session N" so they stay unnamed.
+          this.host.onNewSession(entry.userNamed ? entry.name : undefined, true, entry.sessionId, entry.remote);
+        };
+        nameEl.addEventListener("click", reopen);
+        row.addEventListener("click", (e) => { if (e.target === row) reopen(); });
+      }
+      if (entries.length > 0) sectionLabel("Named sessions");
+    }
 
     for (const entry of entries) {
       const row = dropdown.createDiv({ cls: `claude-terminal-history-item${entry.remote ? " is-remote" : ""}` });
@@ -389,8 +428,8 @@ export class TerminalTabBar {
           .filter((h) => h.name !== entry.name);
         void this.host.saveSettings();
         row.remove();
-        // Close if empty
-        if (dropdown.childElementCount === 0) this.closeHistoryMenu();
+        // Close if no rows are left
+        if (!dropdown.querySelector(".claude-terminal-history-item")) this.closeHistoryMenu();
       });
     }
 
