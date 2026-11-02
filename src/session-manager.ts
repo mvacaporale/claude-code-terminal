@@ -556,8 +556,14 @@ export class TerminalSessionManager {
     if (!persisted || persisted.length === 0) return false;
     this.isRestoring = true;
     try {
+      // Two saved tabs must never resume the same conversation: if a bad
+      // detection saved one id under several tabs, only the first keeps it.
+      const seen = new Set<string>();
       for (const entry of persisted) {
-        this.createSession(entry.name, true, true, entry.claudeSessionId, entry.remote);
+        let id = entry.claudeSessionId;
+        if (id && seen.has(id)) id = undefined;
+        if (id) seen.add(id);
+        this.createSession(entry.name, !!id, true, id, entry.remote);
       }
     } finally {
       this.isRestoring = false;
@@ -762,7 +768,7 @@ export class TerminalSessionManager {
     } else {
       const shellPid = session.ptyProcess?.pid;
       if (!shellPid) return;
-      probe = makeLocalProbe(shellPid);
+      probe = makeLocalProbe(shellPid, launchTime);
     }
 
     // For restored/resumed sessions, claudeSessionId holds the OLD id:
