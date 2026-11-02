@@ -74,6 +74,16 @@ export interface SessionHistoryEntry {
   remote?: RemoteInfo;
 }
 
+/** A tab the user closed, kept so it can be reopened (named or not). */
+export interface ClosedSessionEntry {
+  name: string;
+  sessionId?: string;
+  remote?: RemoteInfo;
+  /** Whether the tab had a user-supplied name; auto-named tabs reopen under a fresh "Session N". */
+  userNamed: boolean;
+  closedAt: number;
+}
+
 export interface PersistedSession {
   name: string;
   claudeSessionId?: string;
@@ -88,6 +98,7 @@ export interface PersistedSession {
 export interface VaultScopedData {
   persistedSessions: PersistedSession[];
   sessionHistory: SessionHistoryEntry[];
+  recentlyClosed: ClosedSessionEntry[];
   remoteHost: string;
   remoteVaultPath: string;
   highlightSavePath: string;
@@ -97,6 +108,7 @@ export interface VaultScopedData {
 export const PER_VAULT_KEYS = [
   "persistedSessions",
   "sessionHistory",
+  "recentlyClosed",
   "remoteHost",
   "remoteVaultPath",
   "highlightSavePath",
@@ -112,6 +124,8 @@ export interface ClaudeTerminalSettings {
   highlightSavePath: string;
   centeredView: boolean;
   sessionHistory: SessionHistoryEntry[];
+  /** Last few closed tabs, newest last (see session-history.ts). */
+  recentlyClosed: ClosedSessionEntry[];
   highlightingEnabled: boolean;
   restoreSessionsOnStartup: boolean;
   cleanCopy: boolean;
@@ -144,6 +158,7 @@ export const DEFAULT_SETTINGS: ClaudeTerminalSettings = {
   highlightSavePath: "highlights",
   centeredView: false,
   sessionHistory: [],
+  recentlyClosed: [],
   highlightingEnabled: true,
   restoreSessionsOnStartup: true,
   cleanCopy: true,

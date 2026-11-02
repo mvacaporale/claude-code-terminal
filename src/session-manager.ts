@@ -23,6 +23,7 @@ import { pastedImagePath, pickPastedImage } from "./image-paste";
 import type ClaudeTerminalPlugin from "./main";
 import { RECEIPT_ENV, TOKEN_ENV } from "./agent-links";
 import { SplitPair, dropFromSplit, inSplit, openSplit, switchInSplit } from "./split-layout";
+import { recordClosedSession } from "./session-history";
 
 type NodePtyModule = typeof import("node-pty");
 
@@ -438,6 +439,7 @@ export class TerminalSessionManager {
     const session = this.sessions.get(id);
     if (!session) return;
 
+    this.rememberClosed(session);
     this.destroySession(session);
     this.sessions.delete(id);
     const wasSplit = inSplit(this.split, id);
@@ -613,6 +615,22 @@ export class TerminalSessionManager {
   }
 
   // ---- Private helpers ----
+
+  /** Keep a closed tab reopenable from the history menu, named or not. */
+  private rememberClosed(session: TerminalSession) {
+    const settings = this.plugin.settings;
+    const next = recordClosedSession(settings.recentlyClosed ?? [], {
+      name: session.name,
+      sessionId: session.claudeSessionId || undefined,
+      remote: session.remote || undefined,
+      userNamed: session.userNamed,
+      closedAt: Date.now(),
+    });
+    if (next !== settings.recentlyClosed) {
+      settings.recentlyClosed = next;
+      void this.plugin.saveSettings();
+    }
+  }
 
   private destroySession(session: TerminalSession) {
     // Keep a saved thread's vault archive fresh with any conversation since the
