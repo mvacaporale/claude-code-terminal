@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import * as path from "path";
 import * as os from "os";
-import { promises as fsp } from "fs";
+import { existsSync, promises as fsp } from "fs";
 import type {
   PersistedSession,
   RemoteInfo,
@@ -14,7 +14,7 @@ import type {
 import { HighlightController } from "./highlights";
 import { TerminalTabBar } from "./tab-bar";
 import { makeLocalProbe, watchForClaudeSessionId } from "./claude-session";
-import type { ThreadRef } from "./claude-threads";
+import { transcriptPath, type ThreadRef } from "./claude-threads";
 import { debugLog } from "./debug";
 import { buildRemoteLaunchCommand, killRemoteTmuxSession, makeTmuxName, probeRemoteSessionId } from "./remote";
 import { cleanCopyText, normalizeCssColor, openExternalLink } from "./text-utils";
@@ -734,6 +734,8 @@ export class TerminalSessionManager {
           fork,
           claudeSessionId: session.claudeSessionId,
           isFirstSession: this.sessionCounter === 1,
+          hasTranscript: !session.claudeSessionId ||
+            existsSync(transcriptPath(os.homedir(), vaultPath, session.claudeSessionId)),
         });
         setTimeout(() => {
           session.ptyProcess?.write(cmd + "\r");

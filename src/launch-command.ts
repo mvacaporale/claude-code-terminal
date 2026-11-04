@@ -9,8 +9,14 @@ export function buildLocalLaunchCommand(opts: {
   fork: boolean;
   claudeSessionId: string | null;
   isFirstSession: boolean;
+  /** False when the saved session's transcript is gone, so `--resume` would just fail. */
+  hasTranscript?: boolean;
 }): string {
-  const { initialInput, resume, fork, claudeSessionId, isFirstSession } = opts;
+  const { initialInput, resume, fork, isFirstSession, hasTranscript = true } = opts;
+  // A tab can hold an id whose transcript was never written (Claude only saves
+  // one after the first message), and `claude --resume` then exits with "No
+  // conversation found". Treat that like having no id.
+  const claudeSessionId = hasTranscript ? opts.claudeSessionId : null;
   // A review session always wants a fresh conversation to drop the prompt into.
   if (initialInput) return "clear && claude";
   if (resume && claudeSessionId) {

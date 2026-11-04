@@ -103,9 +103,9 @@ Show two tabs at once: click the columns button in the tab bar (pairs the curren
 
 ## Resuming tabs
 
-Each tab remembers its Claude session id (read from `~/.claude/sessions/<pid>.json` shortly after launch), and reopening or restoring the tab runs `claude --resume <id>`. A tab whose id was never captured starts a fresh conversation instead of guessing with `claude --continue`. Only the first tab of a brand-new window continues the most recent conversation.
+Each tab remembers its Claude session id (read from `~/.claude/sessions/<pid>.json` shortly after launch), and reopening or restoring the tab runs `claude --resume <id>`. A tab whose id was never captured, or whose transcript no longer exists, starts a fresh conversation instead of guessing with `claude --continue` or failing with "No conversation found". Only the first tab of a brand-new window continues the most recent conversation.
 
-The plugin strips Claude session variables (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION`, ...) from each tab's environment. Without that, an Obsidian started from inside a Claude session (say, an agent restarting it) passes them on, every tab runs as a child of that old session, and its conversation is never saved or resumable.
+The plugin strips Claude session variables (`CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_AGENT_SDK_*`, `CLAUDE_PID`, and `ANTHROPIC_BASE_URL` when it came from a Claude session) from each tab's environment. Your own settings from `~/.zshrc` come back when the tab's shell starts. Without that, an Obsidian started from inside a Claude session (say, an agent restarting it) passes them on, every tab runs as a child of that old session, and its conversation is never saved or resumable.
 
 ## Configuration
 
