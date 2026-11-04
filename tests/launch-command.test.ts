@@ -42,4 +42,16 @@ describe("buildLocalLaunchCommand", () => {
   it("starts a plain session otherwise", () => {
     expect(buildLocalLaunchCommand(base)).toBe("clear && claude");
   });
+
+  it("starts fresh when the saved session's transcript is missing", () => {
+    expect(
+      buildLocalLaunchCommand({ ...base, resume: true, claudeSessionId: "abc-123", hasTranscript: false })
+    ).toBe("clear && claude");
+  });
+
+  it("forks nothing when the transcript to fork from is missing", () => {
+    expect(
+      buildLocalLaunchCommand({ ...base, resume: true, fork: true, claudeSessionId: "abc-123", hasTranscript: false })
+    ).toBe("clear && claude");
+  });
 });
