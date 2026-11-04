@@ -101,6 +101,12 @@ When docked in the right sidebar, use the "..." menu for:
 
 Show two tabs at once: click the columns button in the tab bar (pairs the current tab with its neighbour), or right-click any tab and choose **Open side by side**. Click into either pane to make it the active tab; picking a tab outside the pair swaps it into the active side. Click the button again, or right-click a paired tab and choose **Close side by side**, to go back to one tab.
 
+## Resuming tabs
+
+Each tab remembers its Claude session id (read from `~/.claude/sessions/<pid>.json` shortly after launch), and reopening or restoring the tab runs `claude --resume <id>`. A tab whose id was never captured starts a fresh conversation instead of guessing with `claude --continue`. Only the first tab of a brand-new window continues the most recent conversation.
+
+The plugin strips Claude session variables (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION`, ...) from each tab's environment. Without that, an Obsidian started from inside a Claude session (say, an agent restarting it) passes them on, every tab runs as a child of that old session, and its conversation is never saved or resumable.
+
 ## Configuration
 
 Open Settings > Claude Obsidian Plugin:
@@ -259,6 +265,10 @@ npm install -g @anthropic-ai/claude-code
 ### Permission prompts keep appearing
 
 Add the specific commands to your `.claude/settings.local.json` permissions array, or select "Yes, and always allow" when prompted.
+
+### Tabs reopen the wrong conversation, or `claude --resume` can't find a session
+
+Update the plugin (see "Resuming tabs" above for what changed). Sessions started in a tab while the old version ran under an inherited Claude environment were never written to disk, so they can't be recovered; tabs saved without an id open fresh from now on.
 
 ## Credits
 
