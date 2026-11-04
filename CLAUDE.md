@@ -29,4 +29,5 @@ Merge to `main`. The Mac's checkout self-updates on Obsidian launch (`scripts/ma
 ## Conventions
 - UI changes get screenshots by default: run `npm run screenshot` (add a scenario in `scripts/` when the default one doesn't show the change), look at the PNGs, and share them with Michaelangelo along with the PR. Don't commit the PNGs.
 - Never commit `main.js`, `data.json` or tokens.
+- Tab ptys get `cleanPtyEnv(process.env)` (`src/pty-env.ts`), never raw `process.env`: Obsidian can inherit a parent Claude session's vars, which silently disables transcript saving and session-id detection in every tab.
 - Keep README.md current when settings, commands or behavior change.

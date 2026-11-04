@@ -19,6 +19,7 @@ import { debugLog } from "./debug";
 import { buildRemoteLaunchCommand, killRemoteTmuxSession, makeTmuxName, probeRemoteSessionId } from "./remote";
 import { cleanCopyText, normalizeCssColor, openExternalLink } from "./text-utils";
 import { buildLocalLaunchCommand } from "./launch-command";
+import { cleanPtyEnv } from "./pty-env";
 import { pastedImagePath, pickPastedImage } from "./image-paste";
 import type ClaudeTerminalPlugin from "./main";
 import { RECEIPT_ENV, TOKEN_ENV } from "./agent-links";
@@ -693,7 +694,7 @@ export class TerminalSessionManager {
         rows: session.terminal.rows,
         cwd: vaultPath,
         env: {
-          ...process.env,
+          ...cleanPtyEnv(process.env),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
           // Lets the agent open obsidian://claude-new-tab and claude-feedback links (agent-links.ts).
